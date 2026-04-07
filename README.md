@@ -181,20 +181,53 @@ The script appends one or more rows per processed form entry. The columns writte
 
 ## Setting Up Triggers
 
-### Automatic trigger (recommended)
+### Recommended trigger strategy
 
-The included `setupProcessingTrigger` function creates a **5-minute time-based trigger** that continuously processes any new or unprocessed rows.
+Use **one installable time-driven trigger** for `processFormResponses` and remove old `On form submit` triggers for the same function.
 
-1. In the Apps Script editor, select the function **`setupProcessingTrigger`** from the run-function dropdown.
+Why this is recommended:
+- It is stable for both real-time and backlog processing.
+- It automatically catches up rows that were missed during downtime.
+- It avoids duplicate/overlapping trigger patterns.
+
+### Clean old triggers first (important)
+
+1. Open Apps Script → **Triggers** (clock icon).
+2. Delete any old trigger that runs `processFormResponses` with **Event source = From spreadsheet** and **Event type = On form submit**.
+3. Keep only one active trigger pattern for this project (time-driven).
+
+### Create the correct trigger (automatic method)
+
+The included `setupProcessingTrigger` function creates a **5-minute time-based trigger** and removes older `processFormResponses` triggers first.
+
+1. In the Apps Script editor, select **`setupProcessingTrigger`** from the function dropdown.
 2. Click **Run** (▶).
-3. Accept any permission prompts that appear — these are required for the script to access your spreadsheet.
-4. The trigger is now active. You can verify it under **Triggers** (clock icon in the left sidebar).
+3. Accept permission prompts.
+4. Re-open **Triggers** and confirm you now have one trigger for `processFormResponses` with:
+   - **Event source:** `Time-driven`
+   - **Type:** Every 5 minutes
 
-> Running `setupProcessingTrigger` more than once is safe — it removes the old trigger before creating a new one.
+> Running `setupProcessingTrigger` multiple times is safe.
+
+### Manual trigger setup (UI method)
+
+If you prefer UI setup instead of running `setupProcessingTrigger`:
+
+1. Apps Script → **Triggers** → **Add Trigger**
+2. Choose function: `processFormResponses`
+3. Event source: `Time-driven`
+4. Type of time based trigger: `Minutes timer` → `Every 5 minutes`
+5. Save
 
 ### Manual run (debugging / one-off catch-up)
 
-Select **`processFormResponses`** from the run-function dropdown and click **Run**. This processes all pending rows immediately without waiting for the next scheduled trigger.
+Select **`processFormResponses`** from the run-function dropdown and click **Run**. This processes all pending rows immediately.
+
+### Quick troubleshooting
+
+- **Error rate shows 100% in Triggers:** delete old/wrong trigger entries and recreate using `setupProcessingTrigger`.
+- **No new rows processed:** verify the trigger is `Time-driven` and function name is exactly `processFormResponses`.
+- **Script still uses old settings:** save the latest `FORM.gs`, then run `setupProcessingTrigger` again.
 
 ### How the processing loop works
 
