@@ -420,6 +420,15 @@ function parseTimeInput_(input) {
   const raw = String(input || "").trim().toLowerCase().replace(/\s+/g, "");
   if (!raw) return "";
 
+  const namedTimeMap = {
+    morning: "09:00",
+    afternoon: "12:00",
+    evening: "17:00",
+    night: "21:00",
+    knight: "21:00"
+  };
+  if (namedTimeMap[raw]) return namedTimeMap[raw];
+
   let m = raw.match(/^(\d{1,2}):(\d{2})(a|p|am|pm)?$/);
   if (m) {
     const hour = Number(m[1]);

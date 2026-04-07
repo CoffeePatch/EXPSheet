@@ -56,7 +56,7 @@ The script resolves columns **by header name**, so order does not matter. All of
 |---------------|----------------|
 | `Timestamp` | Set automatically by Google Forms (`YYYY-MM-DD HH:mm:ss`). Fallback for Date and Time fields. |
 | `Date` | Date of the expense (`dd/MM/yyyy`). Leave blank to fall back to Timestamp date. |
-| `Time` | Time of the expense (`HH:mm`). Also accepts shorthand like `530p`, `5:30pm`, or `5p` and normalizes to `HH:mm`. Leave blank to fall back to Timestamp time. |
+| `Time` | Time of the expense (`HH:mm`). Also accepts shorthand like `530p`, `5:30pm`, or `5p`, plus named periods: `morning`→`09:00`, `afternoon`→`12:00`, `evening`→`17:00`, `night` (or `knight`)→`21:00`. Leave blank to fall back to Timestamp time. |
 | `Title` | Short description of the expense or transfer. |
 | `Amount` | Positive number. Negative sign is applied automatically by the script based on direction. |
 | `Transaction Type` | Must contain the word `Transaction` or `Transfer` (case-insensitive). |
@@ -82,7 +82,7 @@ This section explains what data each field accepts, and the different ways you c
 |---|---|---|---|---|
 | `Timestamp` | DateTime | Auto-filled by Google Forms on submit | Yes (sheet header required) | All rows |
 | `Date` | Date | Any valid date value parseable by Google Sheets/Apps Script | Recommended | Transaction + Transfer |
-| `Time` | Time/Text | `HH:mm` preferred; also supports `530p`, `5:30pm`, `5p` and normalizes to `HH:mm` | Optional | Transaction + Transfer |
+| `Time` | Time/Text | `HH:mm` preferred; also supports `530p`, `5:30pm`, `5p`, and named periods (`morning`, `afternoon`, `evening`, `night`/`knight`) which normalize to `09:00`, `12:00`, `17:00`, `21:00` | Optional | Transaction + Transfer |
 | `Title` | Text | Any short description | Recommended | Transaction + Transfer |
 | `Amount` | Number | Positive numeric value (`100`, `100.50`) | Yes | Transaction + Transfer |
 | `Transaction Type` | Text/Choice | Must include `Transaction` or `Transfer` (case-insensitive) | Yes | All rows |
