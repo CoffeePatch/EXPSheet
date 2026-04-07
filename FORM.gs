@@ -465,20 +465,3 @@ function normalizeHourMinute_(hour, minute, suffix) {
 function normalizeText_(value) {
   return String(value || "").trim().toUpperCase();
 }
-
-/** =========================
- *  Optional setup utilities
- *  ========================= */
-
-/**
- * Create/refresh a 5-minute time trigger for processFormResponses.
- * Run once manually after deploying.
- */
-function setupProcessingTrigger() {
-  const fn = "processFormResponses";
-  const existing = ScriptApp.getProjectTriggers().filter((t) => t.getHandlerFunction() === fn);
-  existing.forEach((t) => ScriptApp.deleteTrigger(t));
-
-  ScriptApp.newTrigger(fn).timeBased().everyMinutes(5).create();
-  console.log("Created trigger: processFormResponses every 5 minutes.");
-}
