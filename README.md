@@ -31,7 +31,7 @@ A professional, extensible **Google Apps Script** project for automated expense 
 | 6 | **Concurrent-run protection** | `LockService` prevents two trigger executions from racing and writing duplicate rows. |
 | 7 | **Header-safe dynamic mapping** | Column positions are resolved by name at runtime — reordering columns does not break the script. |
 | 8 | **Robust error logging** | Row-level failures are logged and skipped; successful rows continue to be processed normally. |
-| 9 | **One-command trigger setup** | A single helper function creates (or recreates) the time-based trigger — no manual UI required. |
+| 9 | **Direct time-driven scheduling** | Configure one trigger directly on `processFormResponses` and choose the time cadence that fits your workflow. |
 
 ---
 
@@ -196,28 +196,15 @@ Why this is recommended:
 2. Delete any old trigger that runs `processFormResponses` with **Event source = From spreadsheet** and **Event type = On form submit**.
 3. Keep only one active trigger pattern for this project (time-driven).
 
-### Create the correct trigger (automatic method)
-
-The included `setupProcessingTrigger` function creates a **5-minute time-based trigger** and removes older `processFormResponses` triggers first.
-
-1. In the Apps Script editor, select **`setupProcessingTrigger`** from the function dropdown.
-2. Click **Run** (▶).
-3. Accept permission prompts.
-4. Re-open **Triggers** and confirm you now have one trigger for `processFormResponses` with:
-   - **Event source:** `Time-driven`
-   - **Type:** Every 5 minutes
-
-> Running `setupProcessingTrigger` multiple times is safe.
-
-### Manual trigger setup (UI method)
-
-If you prefer UI setup instead of running `setupProcessingTrigger`:
+### Create the correct trigger (UI method)
 
 1. Apps Script → **Triggers** → **Add Trigger**
 2. Choose function: `processFormResponses`
 3. Event source: `Time-driven`
-4. Type of time based trigger: `Minutes timer` → `Every 5 minutes`
+4. Type of time based trigger: choose the cadence you want (for example every minute, every 5 minutes, every 10 minutes, every 15 minutes, or every 30 minutes)
 5. Save
+
+> Use exactly one active time-driven trigger for `processFormResponses`.
 
 ### Manual run (debugging / one-off catch-up)
 
@@ -225,14 +212,14 @@ Select **`processFormResponses`** from the run-function dropdown and click **Run
 
 ### Quick troubleshooting
 
-- **Error rate shows 100% in Triggers:** delete old/wrong trigger entries and recreate using `setupProcessingTrigger`.
+- **Error rate shows 100% in Triggers:** delete old/wrong trigger entries and recreate one clean time-driven trigger for `processFormResponses`.
 - **No new rows processed:** verify the trigger is `Time-driven` and function name is exactly `processFormResponses`.
-- **Script still uses old settings:** save the latest `FORM.gs`, then run `setupProcessingTrigger` again.
+- **Script still uses old settings:** save the latest `FORM.gs`, then remove and re-add the trigger.
 
 ### How the processing loop works
 
 ```text
-Every 5 minutes (or on manual run):
+On your selected trigger cadence (or on manual run):
   ┌─ Acquire script lock (30 s timeout) ─────────────────────────────┐
   │  1. Read all rows from the "Form" sheet.                          │
   │  2. Skip rows where Processed = "YES".                            │
@@ -264,7 +251,7 @@ If the trigger was not running for a period (e.g., script errors, quota exceeded
 
 ### Changing sheet or column names
 1. Update the corresponding constant in the `CONFIG` block in `FORM.gs`.
-2. Save and run `setupProcessingTrigger` again to verify the script initialises correctly.
+2. Save and verify your existing trigger still points to `processFormResponses`.
 
 ### Error handling
 - If a **required header is missing**, the script throws immediately and logs the problem — no partial writes occur.
