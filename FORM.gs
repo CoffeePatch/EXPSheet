@@ -381,7 +381,7 @@ function indexOrMinusOne_(map, key) {
 
 function parsePersons_(raw) {
   const arr = String(raw || "")
-    .split(/[.,;\n]+/)
+    .split(/[,;\n]+|\.(?=\S)/)
     .map((p) => p.trim())
     .filter(Boolean);
 
