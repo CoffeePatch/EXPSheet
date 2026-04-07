@@ -381,6 +381,8 @@ function indexOrMinusOne_(map, key) {
 
 function parsePersons_(raw) {
   const text = String(raw || "");
+  // Dot separator is only treated as a delimiter for compact lists like "a.b.c".
+  // For names with spaces/punctuation, users should use comma/semicolon/newline separators.
   const dotSeparatedCompact = /^\s*[^\s,;\n.]+(?:\.[^\s,;\n.]+)+\s*$/.test(text);
   const normalized = dotSeparatedCompact ? text.replace(/\./g, ",") : text;
 
