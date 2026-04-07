@@ -381,7 +381,7 @@ function indexOrMinusOne_(map, key) {
 
 function parsePersons_(raw) {
   const arr = String(raw || "")
-    .split(/[,;\n]+/)
+    .split(/[.,;\n]+/)
     .map((p) => p.trim())
     .filter(Boolean);
 
@@ -400,11 +400,60 @@ function formatDate_(value) {
 
 function resolveTime_(input, fallbackTimestamp) {
   const clean = String(input || "").trim();
-  if (clean) return clean;
+  if (clean) {
+    const parsed = parseTimeInput_(clean);
+    return parsed || clean;
+  }
 
   const d = new Date(fallbackTimestamp);
   if (isNaN(d.getTime())) return "";
   return Utilities.formatDate(d, Session.getScriptTimeZone(), CONFIG.TIME_FORMAT);
+}
+
+function parseTimeInput_(input) {
+  const raw = String(input || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!raw) return "";
+
+  let m = raw.match(/^(\d{1,2}):(\d{2})(a|p|am|pm)?$/);
+  if (m) {
+    const hour = Number(m[1]);
+    const minute = Number(m[2]);
+    const suffix = m[3] || "";
+    return normalizeHourMinute_(hour, minute, suffix);
+  }
+
+  m = raw.match(/^(\d{1,2})(\d{2})(a|p|am|pm)$/);
+  if (m) {
+    const hour = Number(m[1]);
+    const minute = Number(m[2]);
+    const suffix = m[3] || "";
+    return normalizeHourMinute_(hour, minute, suffix);
+  }
+
+  m = raw.match(/^(\d{1,2})(a|p|am|pm)$/);
+  if (m) {
+    const hour = Number(m[1]);
+    const suffix = m[2] || "";
+    return normalizeHourMinute_(hour, 0, suffix);
+  }
+
+  return "";
+}
+
+function normalizeHourMinute_(hour, minute, suffix) {
+  if (!isFinite(hour) || !isFinite(minute) || minute < 0 || minute > 59) return "";
+
+  let h = hour;
+  if (suffix) {
+    if (h < 1 || h > 12) return "";
+    const isPm = suffix === "p" || suffix === "pm";
+    if (isPm && h !== 12) h += 12;
+    if (!isPm && h === 12) h = 0;
+  } else if (h < 0 || h > 23) {
+    return "";
+  }
+
+  return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 function normalizeText_(value) {
