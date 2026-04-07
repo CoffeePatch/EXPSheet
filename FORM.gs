@@ -380,8 +380,12 @@ function indexOrMinusOne_(map, key) {
 }
 
 function parsePersons_(raw) {
-  const arr = String(raw || "")
-    .split(/[,;\n]+|\.(?=\S)/)
+  const text = String(raw || "");
+  const dotSeparatedCompact = /^\s*[^\s,;\n.]+(?:\.[^\s,;\n.]+)+\s*$/.test(text);
+  const normalized = dotSeparatedCompact ? text.replace(/\./g, ",") : text;
+
+  const arr = normalized
+    .split(/[,;\n]+/)
     .map((p) => p.trim())
     .filter(Boolean);
 
@@ -444,13 +448,13 @@ function normalizeHourMinute_(hour, minute, suffix) {
   if (!isFinite(hour) || !isFinite(minute) || minute < 0 || minute > 59) return "";
 
   let h = hour;
+  if (!suffix && (h < 0 || h > 23)) return "";
+
   if (suffix) {
     if (h < 1 || h > 12) return "";
     const isPm = suffix === "p" || suffix === "pm";
     if (isPm && h !== 12) h += 12;
     if (!isPm && h === 12) h = 0;
-  } else if (h < 0 || h > 23) {
-    return "";
   }
 
   return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
