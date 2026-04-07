@@ -11,10 +11,11 @@ A professional, extensible **Google Apps Script** project for automated expense 
 3. [Setup Requirements](#setup-requirements)
 4. [Installation](#installation)
 5. [Setting Up Triggers](#setting-up-triggers)
-6. [Usage Notes & Best Practices](#usage-notes--best-practices)
-7. [Contributing](#contributing)
-8. [License](#license)
-9. [Disclaimer](#disclaimer)
+6. [Form Input Types & Fill Methods](#form-input-types--fill-methods)
+7. [Usage Notes & Best Practices](#usage-notes--best-practices)
+8. [Contributing](#contributing)
+9. [License](#license)
+10. [Disclaimer](#disclaimer)
 
 ---
 
@@ -55,7 +56,7 @@ The script resolves columns **by header name**, so order does not matter. All of
 |---------------|----------------|
 | `Timestamp` | Set automatically by Google Forms (`YYYY-MM-DD HH:mm:ss`). Fallback for Date and Time fields. |
 | `Date` | Date of the expense (`dd/MM/yyyy`). Leave blank to fall back to Timestamp date. |
-| `Time` | Time of the expense (`HH:mm`). Leave blank to fall back to Timestamp time. |
+| `Time` | Time of the expense (`HH:mm`). Also accepts shorthand like `530p`, `5:30pm`, or `5p` and normalizes to `HH:mm`. Leave blank to fall back to Timestamp time. |
 | `Title` | Short description of the expense or transfer. |
 | `Amount` | Positive number. Negative sign is applied automatically by the script based on direction. |
 | `Transaction Type` | Must contain the word `Transaction` or `Transfer` (case-insensitive). |
@@ -64,12 +65,63 @@ The script resolves columns **by header name**, so order does not matter. All of
 | `Category` | Expense category *(Transaction rows only)*. |
 | `Type` | `IN` or `OUT` *(Transaction rows only)*. |
 | `Transaction Notes` | Free-text notes *(Transaction rows only, optional)*. |
-| `Split Person` | Comma- or semicolon-separated list of people sharing the expense. Use `me` for yourself. Defaults to `me` if blank. |
+| `Split Person` | Comma-, semicolon-, or compact dot-separated list of people sharing the expense. Use `me` for yourself. Defaults to `me` if blank. |
 | `Out Account` | Source account *(Transfer rows only)*. |
 | `In Account` | Destination account *(Transfer rows only)*. |
 | `Transfer Person` | Person associated with the transfer *(Transfer rows only, optional)*. Defaults to `me`. |
 
 > **Tip:** At least one of `Split Person` or `Transfer Person` must be present as a column; both can coexist.
+
+## Form Input Types & Fill Methods
+
+This section explains what data each field accepts, and the different ways you can fill the form so values correctly replicate into the `Form` sheet.
+
+### Field-by-field accepted data/input
+
+| Field | Data type | Accepted input | Required | Applies to |
+|---|---|---|---|---|
+| `Timestamp` | DateTime | Auto-filled by Google Forms on submit | Yes (sheet header required) | All rows |
+| `Date` | Date | Any valid date value parseable by Google Sheets/Apps Script | Recommended | Transaction + Transfer |
+| `Time` | Time/Text | `HH:mm` preferred; also supports `530p`, `5:30pm`, `5p` and normalizes to `HH:mm` | Optional | Transaction + Transfer |
+| `Title` | Text | Any short description | Recommended | Transaction + Transfer |
+| `Amount` | Number | Positive numeric value (`100`, `100.50`) | Yes | Transaction + Transfer |
+| `Transaction Type` | Text/Choice | Must include `Transaction` or `Transfer` (case-insensitive) | Yes | All rows |
+| `Processed` | Text flag | Leave blank; script writes `YES` after successful processing | Script-managed | All rows |
+| `Account` | Text/Choice | Account name | Yes for transaction rows | Transaction |
+| `Category` | Text/Choice | Category name | Yes for transaction rows | Transaction |
+| `Type` | Text/Choice | `IN` or `OUT` | Yes for transaction rows | Transaction |
+| `Transaction Notes` | Text | Free text notes | Optional | Transaction |
+| `Split Person` | Text list | One or many people separated by comma, semicolon, compact dot format (`person1.person2`), or new line. For names with spaces or periods (like `Dr. Smith`), prefer comma/semicolon/new line. | Optional (defaults to `me`) | Transaction |
+| `Out Account` | Text/Choice | Source account name | Yes for transfer rows | Transfer |
+| `In Account` | Text/Choice | Destination account name | Yes for transfer rows | Transfer |
+| `Transfer Person` | Text/Choice | Person name; defaults to `me` if blank | Optional | Transfer |
+
+### How many ways can you fill the form?
+
+You can fill the form in **3 practical ways**:
+
+1. **Single-person transaction**  
+   Use `Transaction Type = Transaction`, set `Amount`, `Account`, `Category`, `Type`, and one person (or leave blank to default to `me`).
+
+2. **Split transaction (multi-person)**  
+   Use `Transaction Type = Transaction`, and in `Split Person` provide multiple names using any supported separator:
+   - comma: `me, Alice, Bob`
+   - semicolon: `me; Alice; Bob`
+   - new lines: one person per line  
+   - dot: `me.Alice.Bob`  
+   The script splits the total amount equally and writes one `List` row per person.
+   - For names with spaces or periods (like `Dr. Smith`), prefer comma or semicolon separators.
+
+3. **Account transfer**  
+   Use `Transaction Type = Transfer`, and provide `Out Account` + `In Account` (+ optional `Transfer Person`).  
+   The script writes two `List` rows: one `OUT` and one `IN`.
+
+### How this replicates in the `Form` sheet
+
+- Every Google Form submission creates one raw row in the `Form` tab.
+- `processFormResponses` reads unprocessed rows (`Processed` not `YES`).
+- Valid rows are transformed and appended to `List`.
+- Successfully handled `Form` rows are marked `YES` in `Processed`.
 
 ### `List` sheet — output columns
 
@@ -187,7 +239,7 @@ If the trigger was not running for a period (e.g., script errors, quota exceeded
 - Failed rows are **not** marked as processed, so they will be retried on the next run once the data is corrected.
 
 ### Split logic
-- The `Split Person` field accepts a comma- or semicolon-separated list (e.g., `me, Alice, Bob`).
+- The `Split Person` field accepts a comma-, semicolon-, or compact dot-separated list (e.g., `me, Alice, Bob` or `me.Alice.Bob`).
 - The total amount is divided equally; each person receives their own row in `List`.
 - `me` rows with a non-credit/non-pending account are automatically marked `Settled`.
 
