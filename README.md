@@ -91,7 +91,7 @@ This section explains what data each field accepts, and the different ways you c
 | `Category` | Text/Choice | Category name | Yes for transaction rows | Transaction |
 | `Type` | Text/Choice | `IN` or `OUT` | Yes for transaction rows | Transaction |
 | `Transaction Notes` | Text | Free text notes | Optional | Transaction |
-| `Split Person` | Text list | One or many people separated by comma, semicolon, new line, or dot (`person1.person2`). | Optional (defaults to `me`) | Transaction |
+| `Split Person` | Text list | One or many people separated by comma, semicolon, new line, or dot (`person1.person2`). **Note:** dot is always treated as a separator, so names containing `.` are split into multiple people. | Optional (defaults to `me`) | Transaction |
 | `Out Account` | Text/Choice | Source account name | Yes for transfer rows | Transfer |
 | `In Account` | Text/Choice | Destination account name | Yes for transfer rows | Transfer |
 | `Transfer Person` | Text/Choice | Person name; defaults to `me` if blank | Optional | Transfer |
@@ -259,6 +259,7 @@ If the trigger was not running for a period (e.g., script errors, quota exceeded
 
 ### Split logic
 - The `Split Person` field accepts a comma-, semicolon-, newline-, or dot-separated list (e.g., `me, Alice, Bob` or `me.Alice.Bob`).
+- Dot (`.`) is always treated as a person separator in `Split Person`.
 - The total amount is divided equally; each person receives their own row in `List`.
 - `me` rows with a non-credit/non-pending account are automatically marked `Settled`.
 
