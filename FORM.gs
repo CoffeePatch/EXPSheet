@@ -223,15 +223,18 @@ function buildTransferRows_(row, idx, mapped) {
 
   const personRaw = idx.transferPerson >= 0 ? String(row[idx.transferPerson] || "").trim() : "";
   const person = personRaw || CONFIG.DEFAULT_PERSON;
+  const manualNotes = idx.transactionNotes >= 0 ? String(row[idx.transactionNotes] || "").trim() : "";
+  const outNote = manualNotes ? `Transfer Out - ${manualNotes}` : "Transfer Out";
+  const inNote = manualNotes ? `Transfer In - ${manualNotes}` : "Transfer In";
 
   return [
     [
       mapped.finalDate, mapped.finalTime, outAcc, mapped.title,
-      -mapped.rawAmount, person, "Transfer", "Transfer Out", "Completed", "OUT", mapped.finalDate
+      -mapped.rawAmount, person, "Transfer", outNote, "Completed", "OUT", mapped.finalDate
     ],
     [
       mapped.finalDate, mapped.finalTime, inAcc, mapped.title,
-      mapped.rawAmount, person, "Transfer", "Transfer In", "Completed", "IN", mapped.finalDate
+      mapped.rawAmount, person, "Transfer", inNote, "Completed", "IN", mapped.finalDate
     ]
   ];
 }
@@ -380,14 +383,8 @@ function indexOrMinusOne_(map, key) {
 }
 
 function parsePersons_(raw) {
-  const text = String(raw || "");
-  // Dot separator is only treated as a delimiter for compact lists like "a.b.c".
-  // For names with spaces/punctuation, users should use comma/semicolon/newline separators.
-  const dotSeparatedCompact = /^\s*[^\s,;\n.]+(?:\.[^\s,;\n.]+)+\s*$/.test(text);
-  const normalized = dotSeparatedCompact ? text.replace(/\./g, ",") : text;
-
-  const arr = normalized
-    .split(/[,;\n]+/)
+  const arr = String(raw || "")
+    .split(/[.,;\n]+/)
     .map((p) => p.trim())
     .filter(Boolean);
 

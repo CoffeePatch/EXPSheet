@@ -65,7 +65,7 @@ The script resolves columns **by header name**, so order does not matter. All of
 | `Category` | Expense category *(Transaction rows only)*. |
 | `Type` | `IN` or `OUT` *(Transaction rows only)*. |
 | `Transaction Notes` | Free-text notes *(Transaction rows only, optional)*. |
-| `Split Person` | Comma-, semicolon-, or compact dot-separated list of people sharing the expense. Use `me` for yourself. Defaults to `me` if blank. |
+| `Split Person` | Comma-, semicolon-, newline-, or dot-separated list of people sharing the expense. Use `me` for yourself. Defaults to `me` if blank. |
 | `Out Account` | Source account *(Transfer rows only)*. |
 | `In Account` | Destination account *(Transfer rows only)*. |
 | `Transfer Person` | Person associated with the transfer *(Transfer rows only, optional)*. Defaults to `me`. |
@@ -91,7 +91,7 @@ This section explains what data each field accepts, and the different ways you c
 | `Category` | Text/Choice | Category name | Yes for transaction rows | Transaction |
 | `Type` | Text/Choice | `IN` or `OUT` | Yes for transaction rows | Transaction |
 | `Transaction Notes` | Text | Free text notes | Optional | Transaction |
-| `Split Person` | Text list | One or many people separated by comma, semicolon, compact dot format (`person1.person2`), or new line. For names with spaces or periods (like `Dr. Smith`), prefer comma/semicolon/new line. | Optional (defaults to `me`) | Transaction |
+| `Split Person` | Text list | One or many people separated by comma, semicolon, new line, or dot (`person1.person2`). **Note:** dot is always treated as a separator, so names containing `.` are split into multiple people; use names without dots (for example `Dr Smith` or `JK Rowling`). | Optional (defaults to `me`) | Transaction |
 | `Out Account` | Text/Choice | Source account name | Yes for transfer rows | Transfer |
 | `In Account` | Text/Choice | Destination account name | Yes for transfer rows | Transfer |
 | `Transfer Person` | Text/Choice | Person name; defaults to `me` if blank | Optional | Transfer |
@@ -110,7 +110,6 @@ You can fill the form in **3 practical ways**:
    - new lines: one person per line  
    - dot: `me.Alice.Bob`  
    The script splits the total amount equally and writes one `List` row per person.
-   - For names with spaces or periods (like `Dr. Smith`), prefer comma or semicolon separators.
 
 3. **Account transfer**  
    Use `Transaction Type = Transfer`, and provide `Out Account` + `In Account` (+ optional `Transfer Person`).  
@@ -259,12 +258,14 @@ If the trigger was not running for a period (e.g., script errors, quota exceeded
 - Failed rows are **not** marked as processed, so they will be retried on the next run once the data is corrected.
 
 ### Split logic
-- The `Split Person` field accepts a comma-, semicolon-, or compact dot-separated list (e.g., `me, Alice, Bob` or `me.Alice.Bob`).
+- The `Split Person` field accepts a comma-, semicolon-, newline-, or dot-separated list (e.g., `me, Alice, Bob` or `me.Alice.Bob`).
+- Dot (`.`) is always treated as a person separator in `Split Person`.
 - The total amount is divided equally; each person receives their own row in `List`.
 - `me` rows with a non-credit/non-pending account are automatically marked `Settled`.
 
 ### Transfer logic
 - A transfer creates **two rows** in `List`: one `OUT` from the source account and one `IN` to the destination account, both marked `Completed`.
+- If `Transaction Notes` is filled for a transfer row, the note is appended to both transfer entries (for example: `Transfer Out - your note` and `Transfer In - your note`).
 
 ---
 
