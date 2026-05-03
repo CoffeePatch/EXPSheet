@@ -99,10 +99,9 @@ function reconResolveBankColumns_(values) {
     return { startRow: r + 1, dateIdx, debitIdx, creditIdx };
   }
 
+  const dateHeaderLabel = RECON_CONFIG.BANK_DATE_HEADERS.join('" or "');
   throw new Error(
-    `Bank_Raw headers not found. Expected "${RECON_CONFIG.BANK_DATE_HEADERS.join(
-      '" or "'
-    )}" plus "${RECON_CONFIG.BANK_DEBIT_HEADER}" and "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
+    `Bank_Raw headers not found. Expected "${dateHeaderLabel}" plus "${RECON_CONFIG.BANK_DEBIT_HEADER}" and "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
   );
 }
 
