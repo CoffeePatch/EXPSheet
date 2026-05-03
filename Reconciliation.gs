@@ -10,11 +10,12 @@ const RECON_CONFIG = Object.freeze({
   SHEET_BANK_RAW: "Bank_Raw",
   SHEET_RECON_LOG: "Reconciliation_Log",
 
-  RECON_TARGET_ACCOUNT: "",
+  RECON_TARGET_ACCOUNT: "", // TODO: set this to your account string (e.g., "9682") before running.
   RECON_DATE_ORDER: "DMY",
 
-  BANK_DATE_HEADER: "Date",
-  BANK_AMOUNT_HEADER: "Amount"
+  BANK_DATE_HEADERS: ["Txn Date", "Value Date"],
+  BANK_DEBIT_HEADER: "Debit",
+  BANK_CREDIT_HEADER: "Credit"
 });
 
 function reconcileBankStatement() {
@@ -72,24 +73,37 @@ function reconAggregateManualTotals_(values, accountFilter, tz) {
 
 function reconResolveBankColumns_(values) {
   if (!values || values.length === 0) {
-    return { startRow: 0, dateIdx: 0, amountIdx: 1 };
+    throw new Error("Bank_Raw is empty; paste your bank statement before reconciling.");
   }
 
-  const headers = values[0].map((h) => String(h || "").trim());
-  const dateIdx = headers.indexOf(RECON_CONFIG.BANK_DATE_HEADER);
-  const amountIdx = headers.indexOf(RECON_CONFIG.BANK_AMOUNT_HEADER);
+  const dateHeaders = (RECON_CONFIG.BANK_DATE_HEADERS || []).map(reconNormalizeHeader_);
+  const debitHeader = reconNormalizeHeader_(RECON_CONFIG.BANK_DEBIT_HEADER);
+  const creditHeader = reconNormalizeHeader_(RECON_CONFIG.BANK_CREDIT_HEADER);
 
-  if (dateIdx >= 0 && amountIdx >= 0) {
-    return { startRow: 1, dateIdx, amountIdx };
+  for (let r = 0; r < values.length; r++) {
+    const row = values[r] || [];
+    const headers = row.map(reconNormalizeHeader_);
+    const dateIdx = headers.findIndex((header) => dateHeaders.includes(header));
+
+    if (dateIdx < 0) continue;
+
+    const debitIdx = headers.indexOf(debitHeader);
+    const creditIdx = headers.indexOf(creditHeader);
+
+    if (debitIdx < 0 || creditIdx < 0) {
+      throw new Error(
+        `Bank_Raw header row found at row ${r + 1} but missing "${RECON_CONFIG.BANK_DEBIT_HEADER}" or "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
+      );
+    }
+
+    return { startRow: r + 1, dateIdx, debitIdx, creditIdx };
   }
 
-  if (headers.some((h) => h)) {
-    console.warn(
-      `Bank_Raw headers not matched; using columns A/B for date/amount (expected "${RECON_CONFIG.BANK_DATE_HEADER}" and "${RECON_CONFIG.BANK_AMOUNT_HEADER}").`
-    );
-  }
-
-  return { startRow: 0, dateIdx: 0, amountIdx: 1 };
+  throw new Error(
+    `Bank_Raw headers not found. Expected "${RECON_CONFIG.BANK_DATE_HEADERS.join(
+      '" or "'
+    )}" plus "${RECON_CONFIG.BANK_DEBIT_HEADER}" and "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
+  );
 }
 
 function reconAggregateBankTotals_(values, meta, tz) {
@@ -101,18 +115,35 @@ function reconAggregateBankTotals_(values, meta, tz) {
     const dateKey = reconNormalizeDateKey_(row[meta.dateIdx], tz, RECON_CONFIG.RECON_DATE_ORDER);
     if (!dateKey) continue;
 
-    const amount = reconParseAmount_(row[meta.amountIdx]);
-    if (!isFinite(amount) || amount === 0) continue;
+    const debit = reconParseAmount_(row[meta.debitIdx]);
+    const credit = reconParseAmount_(row[meta.creditIdx]);
+
+    if (
+      (!isFinite(debit) || debit === 0) &&
+      (!isFinite(credit) || credit === 0)
+    ) {
+      continue;
+    }
 
     const bucket = reconEnsureTotals_(totals, dateKey);
-    if (amount > 0) {
-      bucket.inflow = reconRoundCurrency_(bucket.inflow + amount);
-    } else {
-      bucket.outflow = reconRoundCurrency_(bucket.outflow + amount);
+
+    if (isFinite(credit) && credit !== 0) {
+      bucket.inflow = reconRoundCurrency_(bucket.inflow + Math.abs(credit));
+    }
+
+    if (isFinite(debit) && debit !== 0) {
+      bucket.outflow = reconRoundCurrency_(bucket.outflow - Math.abs(debit));
     }
   }
 
   return totals;
+}
+
+function reconNormalizeHeader_(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 }
 
 function reconBuildLogRows_(manualTotals, bankTotals) {
