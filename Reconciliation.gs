@@ -10,7 +10,7 @@ const RECON_CONFIG = Object.freeze({
   SHEET_BANK_RAW: "Bank_Raw",
   SHEET_RECON_LOG: "Reconciliation_Log",
 
-  RECON_TARGET_ACCOUNT: "", // TODO: set this to the List sheet account name in column C (e.g., "9682").
+  RECON_TARGET_ACCOUNT: "", // TODO: set this to the exact List sheet account name in column C (case-sensitive, e.g., "9682").
   RECON_DATE_ORDER: "DMY",
 
   BANK_DATE_HEADERS: ["Txn Date", "Value Date"],
@@ -99,9 +99,9 @@ function reconResolveBankColumns_(values) {
     return { startRow: r + 1, dateIdx, debitIdx, creditIdx };
   }
 
-  const dateHeaderLabel = RECON_CONFIG.BANK_DATE_HEADERS.join('" or "');
+  const dateHeadersDisplay = RECON_CONFIG.BANK_DATE_HEADERS.join('" or "');
   throw new Error(
-    `Bank_Raw headers not found. Expected "${dateHeaderLabel}" plus "${RECON_CONFIG.BANK_DEBIT_HEADER}" and "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
+    `Bank_Raw headers not found. Expected "${dateHeadersDisplay}" plus "${RECON_CONFIG.BANK_DEBIT_HEADER}" and "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
   );
 }
 

@@ -160,7 +160,7 @@ The script includes a manual reconciliation helper in `Reconciliation.gs` to com
    - `BANK_DEBIT_HEADER`, `BANK_CREDIT_HEADER` (debit/credit header names in `Bank_Raw`)
 2. Run `reconcileBankStatement()` from the Apps Script editor.
 
-The log outputs: Date, Manual Inflow, Bank Inflow, Inflow Diff, Manual Outflow, Bank Outflow, Outflow Diff. Dates are normalized to `YYYY-MM-DD`, and the `List` sheet is read-only during reconciliation.
+The log outputs: Date, Manual Inflow, Bank Inflow, Inflow Diff, Manual Outflow, Bank Outflow, Outflow Diff. Dates are normalized to `YYYY-MM-DD`, and the reconciliation process does not modify the `List` sheet.
 
 ---
 
