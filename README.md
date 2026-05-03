@@ -39,7 +39,7 @@ Open `Reconciliation.gs` and set the account you want to reconcile in `RECON_CON
 ```javascript
 const RECON_CONFIG = Object.freeze({
   // ...
-  RECON_TARGET_ACCOUNT: "9682", // exact List sheet account name in column C (case-sensitive)
+  RECON_TARGET_ACCOUNT: "YOUR_ACCOUNT_HERE", // exact List sheet account name in column C (case-sensitive)
 });
 ```
 
