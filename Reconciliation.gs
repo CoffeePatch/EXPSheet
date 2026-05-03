@@ -131,6 +131,7 @@ function reconAggregateBankTotals_(values, meta, tz) {
     }
 
     if (isFinite(debit) && debit !== 0) {
+      // Treat debits as outflows regardless of the sign in the statement export.
       const debitOutflow = -Math.abs(debit);
       bucket.outflow = reconRoundCurrency_(bucket.outflow + debitOutflow);
     }
@@ -240,6 +241,9 @@ function reconNormalizeDateKey_(value, tz, dateOrder) {
     } else if (first <= 12 && second <= 12 && preference === "MDY") {
       day = second;
       month = first;
+    } else if (first <= 12 && second <= 12 && preference === "DMY") {
+      day = first;
+      month = second;
     }
 
     if (!reconIsValidDate_(year, month, day)) return "";
