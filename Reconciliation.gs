@@ -236,6 +236,7 @@ function reconNormalizeDateKey_(value, tz, dateOrder) {
     let day = first;
     let month = second;
     const preference = String(dateOrder || "DMY").toUpperCase();
+    const normalizedPreference = preference === "MDY" ? "MDY" : "DMY";
 
     if (first <= 12 && second > 12) {
       day = second;
@@ -243,10 +244,10 @@ function reconNormalizeDateKey_(value, tz, dateOrder) {
     } else if (first > 12 && second <= 12) {
       day = first;
       month = second;
-    } else if (first <= 12 && second <= 12 && preference === "MDY") {
+    } else if (first <= 12 && second <= 12 && normalizedPreference === "MDY") {
       day = second;
       month = first;
-    } else if (first <= 12 && second <= 12 && preference === "DMY") {
+    } else if (first <= 12 && second <= 12) {
       day = first;
       month = second;
     }
