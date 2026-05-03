@@ -34,10 +34,13 @@ Your SBI export **does not have headers on row 1**. The script scans down until 
 
 ### 3) Set `RECON_TARGET_ACCOUNT`
 
-Open `Reconciliation.gs` and set the account you want to reconcile:
+Open `Reconciliation.gs` and set the account you want to reconcile in `RECON_CONFIG` near the top of the file:
 
 ```javascript
-RECON_TARGET_ACCOUNT: null, // TODO: set this to the exact List sheet account name in column C (case-sensitive, e.g., "9682").
+const RECON_CONFIG = Object.freeze({
+  // ...
+  RECON_TARGET_ACCOUNT: "9682", // exact List sheet account name in column C (case-sensitive)
+});
 ```
 
 This is required; the script will stop if it is empty.
