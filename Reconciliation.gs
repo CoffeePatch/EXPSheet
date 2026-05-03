@@ -10,7 +10,7 @@ const RECON_CONFIG = Object.freeze({
   SHEET_BANK_RAW: "Bank_Raw",
   SHEET_RECON_LOG: "Reconciliation_Log",
 
-  RECON_TARGET_ACCOUNT: "XXXX",
+  RECON_TARGET_ACCOUNT: "",
   RECON_DATE_ORDER: "DMY",
 
   BANK_DATE_HEADER: "Date",
@@ -28,7 +28,7 @@ function reconcileBankStatement() {
     );
   }
 
-  if (!RECON_CONFIG.RECON_TARGET_ACCOUNT || RECON_CONFIG.RECON_TARGET_ACCOUNT === "XXXX") {
+  if (!RECON_CONFIG.RECON_TARGET_ACCOUNT) {
     throw new Error("RECON_CONFIG.RECON_TARGET_ACCOUNT must be set to a List sheet account name.");
   }
 

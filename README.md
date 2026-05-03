@@ -148,7 +148,7 @@ The script includes a manual reconciliation helper in `Reconciliation.gs` to com
 
 **Expected tabs**
 - `List` (existing): Date in column A, Account in column C, Amount in column E.
-- `Bank_Raw`: Paste your bank export here. Include headers that match `Date` and `Amount` (or update the header names in `CONFIG`).
+- `Bank_Raw`: Paste your bank export here. Include headers that match `Date` and `Amount` (or update the header names in `RECON_CONFIG`).
 - `Reconciliation_Log`: Created/overwritten by the script.
 
 **How to run**
