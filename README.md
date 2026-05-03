@@ -154,6 +154,7 @@ The script includes a manual reconciliation helper to compare your `List` tab ag
 **How to run**
 1. Update `CONFIG` values for:
    - `RECON_TARGET_ACCOUNT` (account name to match in `List`)
+   - `RECON_DATE_ORDER` (`DMY` or `MDY`, used when dates are ambiguous like `03/04/2026`)
    - `SHEET_BANK_RAW`, `SHEET_RECON_LOG` (if you use different tab names)
    - `BANK_DATE_HEADER`, `BANK_AMOUNT_HEADER` (header names in `Bank_Raw`)
 2. Run `reconcileBankStatement()` from the Apps Script editor.

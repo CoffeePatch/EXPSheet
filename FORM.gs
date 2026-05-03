@@ -48,6 +48,7 @@ const CONFIG = Object.freeze({
   LOCK_WAIT_MS: 30000,
 
   RECON_TARGET_ACCOUNT: "XXXX",
+  RECON_DATE_ORDER: "DMY",
   BANK_DATE_HEADER: "Date",
   BANK_AMOUNT_HEADER: "Amount"
 });
@@ -493,6 +494,10 @@ function reconcileBankStatement() {
     );
   }
 
+  if (!CONFIG.RECON_TARGET_ACCOUNT || CONFIG.RECON_TARGET_ACCOUNT === "XXXX") {
+    throw new Error('CONFIG.RECON_TARGET_ACCOUNT must be set to a List sheet account name.');
+  }
+
   const tz = ss.getSpreadsheetTimeZone();
   const manualValues = listSheet.getDataRange().getValues();
   const bankValues = bankSheet.getDataRange().getValues();
@@ -514,7 +519,7 @@ function aggregateManualTotals_(values, accountFilter, tz) {
     const account = String(row[2] || "").trim();
     if (account !== accountFilter) continue;
 
-    const dateKey = normalizeDateKey_(row[0], tz);
+    const dateKey = normalizeDateKey_(row[0], tz, CONFIG.RECON_DATE_ORDER);
     if (!dateKey) continue;
 
     const amount = parseAmount_(row[4]);
@@ -544,6 +549,12 @@ function resolveBankColumns_(values) {
     return { startRow: 1, dateIdx, amountIdx };
   }
 
+  if (headers.some((h) => h)) {
+    console.warn(
+      `Bank_Raw headers not matched; using columns A/B for date/amount (expected "${CONFIG.BANK_DATE_HEADER}" and "${CONFIG.BANK_AMOUNT_HEADER}").`
+    );
+  }
+
   return { startRow: 0, dateIdx: 0, amountIdx: 1 };
 }
 
@@ -553,7 +564,7 @@ function aggregateBankTotals_(values, meta, tz) {
 
   for (let r = meta.startRow; r < values.length; r++) {
     const row = values[r];
-    const dateKey = normalizeDateKey_(row[meta.dateIdx], tz);
+    const dateKey = normalizeDateKey_(row[meta.dateIdx], tz, CONFIG.RECON_DATE_ORDER);
     if (!dateKey) continue;
 
     const amount = parseAmount_(row[meta.amountIdx]);
@@ -629,7 +640,7 @@ function writeReconciliationLog_(ss, rows) {
   logSheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
 }
 
-function normalizeDateKey_(value, tz) {
+function normalizeDateKey_(value, tz, dateOrder) {
   if (!value) return "";
 
   if (Object.prototype.toString.call(value) === "[object Date]") {
@@ -656,7 +667,12 @@ function normalizeDateKey_(value, tz) {
 
     let day = first;
     let month = second;
+    const preference = String(dateOrder || "DMY").toUpperCase();
+
     if (first <= 12 && second > 12) {
+      day = second;
+      month = first;
+    } else if (first <= 12 && second <= 12 && preference === "MDY") {
       day = second;
       month = first;
     }
