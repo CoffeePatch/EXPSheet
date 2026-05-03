@@ -10,7 +10,7 @@ const RECON_CONFIG = Object.freeze({
   SHEET_BANK_RAW: "Bank_Raw",
   SHEET_RECON_LOG: "Reconciliation_Log",
 
-  RECON_TARGET_ACCOUNT: "", // TODO: set this to your account string (e.g., "9682") before running.
+  RECON_TARGET_ACCOUNT: "", // TODO: set this to the List sheet account name in column C (e.g., "9682").
   RECON_DATE_ORDER: "DMY",
 
   BANK_DATE_HEADERS: ["Txn Date", "Value Date"],
@@ -238,6 +238,9 @@ function reconNormalizeDateKey_(value, tz, dateOrder) {
     if (first <= 12 && second > 12) {
       day = second;
       month = first;
+    } else if (first > 12 && second <= 12) {
+      day = first;
+      month = second;
     } else if (first <= 12 && second <= 12 && preference === "MDY") {
       day = second;
       month = first;
@@ -260,9 +263,12 @@ function reconNormalizeDateKey_(value, tz, dateOrder) {
 
 function reconIsValidDate_(year, month, day) {
   if (!year || !month || !day) return false;
-  if (month < 1 || month > 12) return false;
-  if (day < 1 || day > 31) return false;
-  return true;
+  const parsed = new Date(year, month - 1, day);
+  return (
+    parsed.getFullYear() === year &&
+    parsed.getMonth() === month - 1 &&
+    parsed.getDate() === day
+  );
 }
 
 function reconPad2_(value) {
