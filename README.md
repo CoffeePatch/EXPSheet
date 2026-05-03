@@ -144,7 +144,7 @@ The script appends one or more rows per processed form entry. The columns writte
 
 ## Bank Reconciliation (Manual vs Bank)
 
-The script includes a manual reconciliation helper to compare your `List` tab against a pasted bank statement.
+The script includes a manual reconciliation helper in `Reconciliation.gs` to compare your `List` tab against a pasted bank statement.
 
 **Expected tabs**
 - `List` (existing): Date in column A, Account in column C, Amount in column E.
@@ -152,7 +152,7 @@ The script includes a manual reconciliation helper to compare your `List` tab ag
 - `Reconciliation_Log`: Created/overwritten by the script.
 
 **How to run**
-1. Update `CONFIG` values for:
+1. Update `RECON_CONFIG` values in `Reconciliation.gs`:
    - `RECON_TARGET_ACCOUNT` (account name to match in `List`)
    - `RECON_DATE_ORDER` (`DMY` or `MDY`, used when dates are ambiguous like `03/04/2026`)
    - `SHEET_BANK_RAW`, `SHEET_RECON_LOG` (if you use different tab names)
