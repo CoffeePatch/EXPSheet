@@ -142,6 +142,26 @@ The script appends one or more rows per processed form entry. The columns writte
 
 ---
 
+## Bank Reconciliation (Manual vs Bank)
+
+The script includes a manual reconciliation helper to compare your `List` tab against a pasted bank statement.
+
+**Expected tabs**
+- `List` (existing): Date in column A, Account in column C, Amount in column E.
+- `Bank_Raw`: Paste your bank export here. Include headers that match `Date` and `Amount` (or update the header names in `CONFIG`).
+- `Reconciliation_Log`: Created/overwritten by the script.
+
+**How to run**
+1. Update `CONFIG` values for:
+   - `RECON_TARGET_ACCOUNT` (account name to match in `List`)
+   - `SHEET_BANK_RAW`, `SHEET_RECON_LOG` (if you use different tab names)
+   - `BANK_DATE_HEADER`, `BANK_AMOUNT_HEADER` (header names in `Bank_Raw`)
+2. Run `reconcileBankStatement()` from the Apps Script editor.
+
+The log outputs: Date, Manual Inflow, Bank Inflow, Inflow Diff, Manual Outflow, Bank Outflow, Outflow Diff. Dates are normalized to `YYYY-MM-DD`, and the `List` sheet is read-only during reconciliation.
+
+---
+
 ## Setup Requirements
 
 - A **Google Account** with access to Google Sheets and Google Forms.
