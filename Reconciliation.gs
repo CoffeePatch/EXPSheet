@@ -10,7 +10,7 @@ const RECON_CONFIG = Object.freeze({
   SHEET_BANK_RAW: "Bank_Raw",
   SHEET_RECON_LOG: "Reconciliation_Log",
 
-  RECON_TARGET_ACCOUNT: "", // TODO: set this to the exact List sheet account name in column C (case-sensitive, e.g., "9682").
+  RECON_TARGET_ACCOUNT: null, // TODO: set this to the exact List sheet account name in column C (case-sensitive, e.g., "9682").
   RECON_DATE_ORDER: "DMY",
 
   BANK_DATE_HEADERS: ["Txn Date", "Value Date"],
@@ -30,7 +30,9 @@ function reconcileBankStatement() {
   }
 
   if (!RECON_CONFIG.RECON_TARGET_ACCOUNT) {
-    throw new Error("RECON_CONFIG.RECON_TARGET_ACCOUNT must be set to a List sheet account name.");
+    throw new Error(
+      "Set RECON_CONFIG.RECON_TARGET_ACCOUNT to a List sheet account name before reconciling."
+    );
   }
 
   const tz = ss.getSpreadsheetTimeZone();
