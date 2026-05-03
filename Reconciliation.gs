@@ -132,7 +132,8 @@ function reconAggregateBankTotals_(values, meta, tz) {
     }
 
     if (isFinite(debit) && debit !== 0) {
-      bucket.outflow = reconRoundCurrency_(bucket.outflow - Math.abs(debit));
+      const debitOutflow = -Math.abs(debit);
+      bucket.outflow = reconRoundCurrency_(bucket.outflow + debitOutflow);
     }
   }
 
