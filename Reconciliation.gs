@@ -26,8 +26,14 @@ function reconcileBankStatement() {
   const logSheetName = reconNormalizeSheetName_(RECON_CONFIG.SHEET_RECON_LOG);
 
   if (!listSheetName || !bankSheetName || !logSheetName) {
+    const missingSheets = [];
+    if (!listSheetName) missingSheets.push("SHEET_LIST");
+    if (!bankSheetName) missingSheets.push("SHEET_BANK_RAW");
+    if (!logSheetName) missingSheets.push("SHEET_RECON_LOG");
     throw new Error(
-      "Set RECON_CONFIG.SHEET_LIST, SHEET_BANK_RAW, and SHEET_RECON_LOG to your sheet names before reconciling."
+      `Set RECON_CONFIG.${missingSheets.join(
+        ", "
+      )} to your sheet names before reconciling.`
     );
   }
 
@@ -299,6 +305,7 @@ function reconDateKeyToDate_(dateKey) {
   const month = Number(parts[1]);
   const day = Number(parts[2]);
 
+  if (!isFinite(year) || !isFinite(month) || !isFinite(day)) return null;
   if (!reconIsValidDate_(year, month, day)) return null;
   return new Date(year, month - 1, day);
 }
