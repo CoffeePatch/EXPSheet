@@ -85,7 +85,7 @@ function reconAggregateManualTotals_(values, accountFilter, tz) {
 }
 
 function reconResolveBankColumns_(values, bankSheetName) {
-  const sheetLabel = bankSheetName || RECON_CONFIG.SHEET_BANK_RAW || "Bank_Raw";
+  const sheetLabel = bankSheetName;
   if (!values || values.length === 0) {
     throw new Error(
       `${sheetLabel} is empty; paste your bank statement before reconciling.`
@@ -188,7 +188,10 @@ function reconBuildLogRows_(manualTotals, bankTotals) {
     const overallDiff = reconRoundCurrency_(inflowDiff + outflowDiff);
 
     if (inflowDiff !== 0 || outflowDiff !== 0) {
-      const dateValue = reconDateKeyToDate_(dateKey) || dateKey;
+      const dateValue = reconDateKeyToDate_(dateKey);
+      if (!dateValue) {
+        throw new Error(`Invalid normalized date key "${dateKey}".`);
+      }
       rows.push([
         dateValue,
         manual.inflow,
