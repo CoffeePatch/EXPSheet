@@ -113,7 +113,7 @@ You can fill the form in **3 practical ways**:
 
 3. **Account transfer**  
    Use `Transaction Type = Transfer`, and provide `Out Account` + `In Account` (+ optional `Transfer Person`).  
-   The script writes two `List` rows: one `OUT` and one `IN`.
+   The script writes two `List` rows: one negative amount for the outflow and one positive amount for the inflow.
 
 ### How this replicates in the `Form` sheet
 
@@ -137,8 +137,7 @@ The script appends one or more rows per processed form entry. The columns writte
 | 7 | Category | Expense category (or `Transfer` for transfers) |
 | 8 | Notes | Transaction notes, with an auto-appended split suffix when applicable |
 | 9 | Status | `Settled`, `Pending`, or `Completed` |
-| 10 | Direction | `IN` or `OUT` |
-| 11 | Settlement Date | Populated when Status is `Settled` or `Completed`; blank otherwise |
+| 10 | Settlement Date | Populated when Status is `Settled` or `Completed`; blank otherwise |
 
 ---
 
@@ -288,7 +287,7 @@ If the trigger was not running for a period (e.g., script errors, quota exceeded
 - `me` rows with a non-credit/non-pending account are automatically marked `Settled`.
 
 ### Transfer logic
-- A transfer creates **two rows** in `List`: one `OUT` from the source account and one `IN` to the destination account, both marked `Completed`.
+- A transfer creates **two rows** in `List`: one with a negative amount from the source account and one with a positive amount to the destination account, both marked `Completed`.
 - If `Transaction Notes` is filled for a transfer row, the note is appended to both transfer entries (for example: `Transfer Out - your note` and `Transfer In - your note`).
 
 ---

@@ -230,11 +230,11 @@ function buildTransferRows_(row, idx, mapped) {
   return [
     [
       mapped.finalDate, mapped.finalTime, outAcc, mapped.title,
-      -mapped.rawAmount, person, "Transfer", outNote, "Completed", "OUT", mapped.finalDate
+      -mapped.rawAmount, person, "Transfer", outNote, "Completed", mapped.finalDate
     ],
     [
       mapped.finalDate, mapped.finalTime, inAcc, mapped.title,
-      mapped.rawAmount, person, "Transfer", inNote, "Completed", "IN", mapped.finalDate
+      mapped.rawAmount, person, "Transfer", inNote, "Completed", mapped.finalDate
     ]
   ];
 }
@@ -275,7 +275,7 @@ function buildTransactionRows_(row, idx, mapped) {
     return [
       mapped.finalDate, mapped.finalTime, account, mapped.title,
       perHeadAmount, person, category, note,
-      rowStatus, direction, settlementDate
+      rowStatus, settlementDate
     ];
   });
 }
