@@ -38,16 +38,19 @@ These must appear **on the same row**. If your export uses different labels, upd
 
 ### 4) Required configuration
 
-In `Reconciliation.gs`, set the account you want to reconcile:
+In `Reconciliation.gs`, set the account you want to reconcile and confirm your tab names:
 
 ```javascript
 const RECON_CONFIG = Object.freeze({
-  // ...
+  SHEET_LIST: "List",
+  SHEET_BANK_RAW: "Bank_Raw",
+  SHEET_RECON_LOG: "Reconciliation_Log",
+  RECON_LOG_DATE_FORMAT: "dd/MM/yyyy",
   RECON_TARGET_ACCOUNT: "9682", // exact List sheet account name in column C (case-sensitive)
 });
 ```
 
-The script will stop if `RECON_TARGET_ACCOUNT` is not set.
+The script will stop if `RECON_TARGET_ACCOUNT` or the sheet names are not set.
 
 ---
 
@@ -73,13 +76,14 @@ The script writes these columns:
 
 | Column | Meaning |
 |---|---|
-| Date | Normalized as `YYYY-MM-DD`. |
+| Date | Displayed using `RECON_LOG_DATE_FORMAT` (default `dd/MM/yyyy`). |
 | Manual Inflow | Sum of positive amounts in `List` for that date. |
 | Bank Inflow | Sum of SBI `Credit` values for that date. |
 | Inflow Diff | `Manual Inflow - Bank Inflow`. |
 | Manual Outflow | Sum of negative amounts in `List` for that date. |
 | Bank Outflow | Sum of SBI `Debit` values as **negative totals**. |
 | Outflow Diff | `Manual Outflow - Bank Outflow`. |
+| Overall Diff | `Inflow Diff + Outflow Diff` (net difference for the date). |
 
 ### What the diffs mean
 

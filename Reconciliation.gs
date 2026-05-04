@@ -6,9 +6,10 @@
  */
 
 const RECON_CONFIG = Object.freeze({
-  SHEET_LIST: "List",
-  SHEET_BANK_RAW: "Bank_Raw",
-  SHEET_RECON_LOG: "Reconciliation_Log",
+  SHEET_LIST: "List", // Change to match your ledger tab name.
+  SHEET_BANK_RAW: "Bank_Raw", // Change to match the pasted bank statement tab.
+  SHEET_RECON_LOG: "Reconciliation_Log", // Change to customize the output tab name.
+  RECON_LOG_DATE_FORMAT: "dd/MM/yyyy", // Output format for the Date column in Reconciliation_Log.
 
   RECON_TARGET_ACCOUNT: null, // TODO: set this to the exact List sheet account name in column C (case-sensitive, e.g., "9682").
   RECON_DATE_ORDER: "DMY",
@@ -20,12 +21,28 @@ const RECON_CONFIG = Object.freeze({
 
 function reconcileBankStatement() {
   const ss = SpreadsheetApp.getActive();
-  const listSheet = ss.getSheetByName(RECON_CONFIG.SHEET_LIST);
-  const bankSheet = ss.getSheetByName(RECON_CONFIG.SHEET_BANK_RAW);
+  const listSheetName = reconNormalizeSheetName_(RECON_CONFIG.SHEET_LIST);
+  const bankSheetName = reconNormalizeSheetName_(RECON_CONFIG.SHEET_BANK_RAW);
+  const logSheetName = reconNormalizeSheetName_(RECON_CONFIG.SHEET_RECON_LOG);
+
+  if (!listSheetName || !bankSheetName || !logSheetName) {
+    const missingSheets = [];
+    if (!listSheetName) missingSheets.push("SHEET_LIST");
+    if (!bankSheetName) missingSheets.push("SHEET_BANK_RAW");
+    if (!logSheetName) missingSheets.push("SHEET_RECON_LOG");
+    throw new Error(
+      `Set RECON_CONFIG.${missingSheets.join(
+        ", "
+      )} to your sheet names before reconciling.`
+    );
+  }
+
+  const listSheet = ss.getSheetByName(listSheetName);
+  const bankSheet = ss.getSheetByName(bankSheetName);
 
   if (!listSheet || !bankSheet) {
     throw new Error(
-      `Missing sheet(s). Required: "${RECON_CONFIG.SHEET_LIST}" and "${RECON_CONFIG.SHEET_BANK_RAW}".`
+      `Missing sheet(s). Required: "${listSheetName}" and "${bankSheetName}".`
     );
   }
 
@@ -40,11 +57,11 @@ function reconcileBankStatement() {
   const bankValues = bankSheet.getDataRange().getValues();
 
   const manualTotals = reconAggregateManualTotals_(manualValues, RECON_CONFIG.RECON_TARGET_ACCOUNT, tz);
-  const bankMeta = reconResolveBankColumns_(bankValues);
+  const bankMeta = reconResolveBankColumns_(bankValues, bankSheetName);
   const bankTotals = reconAggregateBankTotals_(bankValues, bankMeta, tz);
 
   const logRows = reconBuildLogRows_(manualTotals, bankTotals);
-  reconWriteLog_(ss, logRows);
+  reconWriteLog_(ss, logRows, logSheetName);
 }
 
 function reconAggregateManualTotals_(values, accountFilter, tz) {
@@ -73,9 +90,11 @@ function reconAggregateManualTotals_(values, accountFilter, tz) {
   return totals;
 }
 
-function reconResolveBankColumns_(values) {
+function reconResolveBankColumns_(values, bankSheetName) {
   if (!values || values.length === 0) {
-    throw new Error("Bank_Raw is empty; paste your bank statement before reconciling.");
+    throw new Error(
+      `${bankSheetName} is empty; paste your bank statement before reconciling.`
+    );
   }
 
   const dateHeaders = (RECON_CONFIG.BANK_DATE_HEADERS || []).map(reconNormalizeHeader_);
@@ -94,7 +113,7 @@ function reconResolveBankColumns_(values) {
 
     if (debitIdx < 0 || creditIdx < 0) {
       throw new Error(
-        `Bank_Raw header row found at row ${r + 1} but missing "${RECON_CONFIG.BANK_DEBIT_HEADER}" or "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
+        `${bankSheetName} header row found at row ${r + 1} but missing "${RECON_CONFIG.BANK_DEBIT_HEADER}" or "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
       );
     }
 
@@ -103,7 +122,7 @@ function reconResolveBankColumns_(values) {
 
   const dateHeadersDisplay = RECON_CONFIG.BANK_DATE_HEADERS.join('" or "');
   throw new Error(
-    `Bank_Raw headers not found. Expected "${dateHeadersDisplay}" plus "${RECON_CONFIG.BANK_DEBIT_HEADER}" and "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
+    `${bankSheetName} headers not found. Expected "${dateHeadersDisplay}" plus "${RECON_CONFIG.BANK_DEBIT_HEADER}" and "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
   );
 }
 
@@ -157,28 +176,37 @@ function reconBuildLogRows_(manualTotals, bankTotals) {
     "Inflow Diff",
     "Manual Outflow",
     "Bank Outflow",
-    "Outflow Diff"
+    "Outflow Diff",
+    "Overall Diff"
   ];
 
   const rows = [headers];
   const dateKeys = reconCollectDateKeys_(manualTotals, bankTotals);
 
   dateKeys.forEach((dateKey) => {
+    const dateValue = reconDateKeyToDate_(dateKey);
+    if (!dateValue) {
+      throw new Error(`Invalid normalized date key "${dateKey}".`);
+    }
+
     const manual = manualTotals[dateKey] || { inflow: 0, outflow: 0 };
     const bank = bankTotals[dateKey] || { inflow: 0, outflow: 0 };
 
     const inflowDiff = reconRoundCurrency_(manual.inflow - bank.inflow);
     const outflowDiff = reconRoundCurrency_(manual.outflow - bank.outflow);
 
+    const overallDiff = reconRoundCurrency_(inflowDiff + outflowDiff);
+
     if (inflowDiff !== 0 || outflowDiff !== 0) {
       rows.push([
-        dateKey,
+        dateValue,
         manual.inflow,
         bank.inflow,
         inflowDiff,
         manual.outflow,
         bank.outflow,
-        outflowDiff
+        outflowDiff,
+        overallDiff
       ]);
     }
   });
@@ -197,15 +225,20 @@ function reconCollectDateKeys_(manualTotals, bankTotals) {
   return Object.keys(keys).sort();
 }
 
-function reconWriteLog_(ss, rows) {
-  let logSheet = ss.getSheetByName(RECON_CONFIG.SHEET_RECON_LOG);
+function reconWriteLog_(ss, rows, logSheetName) {
+  let logSheet = ss.getSheetByName(logSheetName);
   if (!logSheet) {
-    logSheet = ss.insertSheet(RECON_CONFIG.SHEET_RECON_LOG);
+    logSheet = ss.insertSheet(logSheetName);
   }
 
   logSheet.clearContents();
   if (rows.length === 0) return;
   logSheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+
+  const dateFormat = String(RECON_CONFIG.RECON_LOG_DATE_FORMAT || "").trim();
+  if (dateFormat && rows.length > 1) {
+    logSheet.getRange(2, 1, rows.length - 1, 1).setNumberFormat(dateFormat);
+  }
 }
 
 function reconNormalizeDateKey_(value, tz, dateOrder) {
@@ -264,6 +297,19 @@ function reconNormalizeDateKey_(value, tz, dateOrder) {
   return "";
 }
 
+function reconDateKeyToDate_(dateKey) {
+  const parts = String(dateKey || "").split("-");
+  if (parts.length !== 3) return null;
+
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+
+  if (!isFinite(year) || !isFinite(month) || !isFinite(day)) return null;
+  if (!reconIsValidDate_(year, month, day)) return null;
+  return new Date(year, month - 1, day);
+}
+
 function reconIsValidDate_(year, month, day) {
   if (!year || !month || !day) return false;
   const parsed = new Date(year, month - 1, day);
@@ -301,6 +347,10 @@ function reconParseAmount_(value) {
 
 function reconRoundCurrency_(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function reconNormalizeSheetName_(value) {
+  return String(value || "").trim();
 }
 
 function reconEnsureTotals_(map, key) {

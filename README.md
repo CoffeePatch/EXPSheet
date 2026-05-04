@@ -150,17 +150,19 @@ The script includes a manual reconciliation helper in `Reconciliation.gs` to com
 - `List` (existing): Date in column A, Account in column C, Amount in column E.
 - `Bank_Raw`: Paste your bank export here. The script scans down to find a header row containing `Txn Date` or `Value Date`, plus `Debit` and `Credit` (or update the header names in `RECON_CONFIG`).
 - `Reconciliation_Log`: Created/overwritten by the script.
+  - If your tab names differ, update `SHEET_LIST`, `SHEET_BANK_RAW`, and `SHEET_RECON_LOG` in `RECON_CONFIG`.
 
 **How to run**
 1. Update `RECON_CONFIG` values in `Reconciliation.gs`:
-   - `RECON_TARGET_ACCOUNT` (account name to match in `List`)
-   - `RECON_DATE_ORDER` (`DMY` or `MDY`, used when dates are ambiguous like `03/04/2026`)
-   - `SHEET_BANK_RAW`, `SHEET_RECON_LOG` (if you use different tab names)
-   - `BANK_DATE_HEADERS` (acceptable date header names in `Bank_Raw`)
-   - `BANK_DEBIT_HEADER`, `BANK_CREDIT_HEADER` (debit/credit header names in `Bank_Raw`)
+    - `RECON_TARGET_ACCOUNT` (account name to match in `List`)
+    - `RECON_DATE_ORDER` (`DMY` or `MDY`, used when dates are ambiguous like `03/04/2026`)
+    - `SHEET_LIST`, `SHEET_BANK_RAW`, `SHEET_RECON_LOG` (if you use different tab names)
+    - `RECON_LOG_DATE_FORMAT` (format for the Date column in `Reconciliation_Log`)
+    - `BANK_DATE_HEADERS` (acceptable date header names in `Bank_Raw`)
+    - `BANK_DEBIT_HEADER`, `BANK_CREDIT_HEADER` (debit/credit header names in `Bank_Raw`)
 2. Run `reconcileBankStatement()` from the Apps Script editor.
 
-The log outputs: Date, Manual Inflow, Bank Inflow, Inflow Diff, Manual Outflow, Bank Outflow, Outflow Diff. Dates are normalized to `YYYY-MM-DD`, and the reconciliation process does not modify the `List` sheet.
+The log outputs: Date, Manual Inflow, Bank Inflow, Inflow Diff, Manual Outflow, Bank Outflow, Outflow Diff, Overall Diff. Dates are formatted using `RECON_LOG_DATE_FORMAT`, and the reconciliation process does not modify the `List` sheet.
 
 ---
 
