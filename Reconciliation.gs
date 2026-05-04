@@ -85,10 +85,9 @@ function reconAggregateManualTotals_(values, accountFilter, tz) {
 }
 
 function reconResolveBankColumns_(values, bankSheetName) {
-  const sheetLabel = bankSheetName;
   if (!values || values.length === 0) {
     throw new Error(
-      `${sheetLabel} is empty; paste your bank statement before reconciling.`
+      `${bankSheetName} is empty; paste your bank statement before reconciling.`
     );
   }
 
@@ -108,7 +107,7 @@ function reconResolveBankColumns_(values, bankSheetName) {
 
     if (debitIdx < 0 || creditIdx < 0) {
       throw new Error(
-        `${sheetLabel} header row found at row ${r + 1} but missing "${RECON_CONFIG.BANK_DEBIT_HEADER}" or "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
+        `${bankSheetName} header row found at row ${r + 1} but missing "${RECON_CONFIG.BANK_DEBIT_HEADER}" or "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
       );
     }
 
@@ -117,7 +116,7 @@ function reconResolveBankColumns_(values, bankSheetName) {
 
   const dateHeadersDisplay = RECON_CONFIG.BANK_DATE_HEADERS.join('" or "');
   throw new Error(
-    `${sheetLabel} headers not found. Expected "${dateHeadersDisplay}" plus "${RECON_CONFIG.BANK_DEBIT_HEADER}" and "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
+    `${bankSheetName} headers not found. Expected "${dateHeadersDisplay}" plus "${RECON_CONFIG.BANK_DEBIT_HEADER}" and "${RECON_CONFIG.BANK_CREDIT_HEADER}".`
   );
 }
 
@@ -179,6 +178,11 @@ function reconBuildLogRows_(manualTotals, bankTotals) {
   const dateKeys = reconCollectDateKeys_(manualTotals, bankTotals);
 
   dateKeys.forEach((dateKey) => {
+    const dateValue = reconDateKeyToDate_(dateKey);
+    if (!dateValue) {
+      throw new Error(`Invalid normalized date key "${dateKey}".`);
+    }
+
     const manual = manualTotals[dateKey] || { inflow: 0, outflow: 0 };
     const bank = bankTotals[dateKey] || { inflow: 0, outflow: 0 };
 
@@ -188,10 +192,6 @@ function reconBuildLogRows_(manualTotals, bankTotals) {
     const overallDiff = reconRoundCurrency_(inflowDiff + outflowDiff);
 
     if (inflowDiff !== 0 || outflowDiff !== 0) {
-      const dateValue = reconDateKeyToDate_(dateKey);
-      if (!dateValue) {
-        throw new Error(`Invalid normalized date key "${dateKey}".`);
-      }
       rows.push([
         dateValue,
         manual.inflow,
