@@ -157,7 +157,8 @@ function reconBuildLogRows_(manualTotals, bankTotals) {
     "Inflow Diff",
     "Manual Outflow",
     "Bank Outflow",
-    "Outflow Diff"
+    "Outflow Diff",
+    "Overall Diff"
   ];
 
   const rows = [headers];
@@ -170,6 +171,8 @@ function reconBuildLogRows_(manualTotals, bankTotals) {
     const inflowDiff = reconRoundCurrency_(manual.inflow - bank.inflow);
     const outflowDiff = reconRoundCurrency_(manual.outflow - bank.outflow);
 
+    const overallDiff = reconRoundCurrency_(inflowDiff + outflowDiff);
+
     if (inflowDiff !== 0 || outflowDiff !== 0) {
       rows.push([
         dateKey,
@@ -178,7 +181,8 @@ function reconBuildLogRows_(manualTotals, bankTotals) {
         inflowDiff,
         manual.outflow,
         bank.outflow,
-        outflowDiff
+        outflowDiff,
+        overallDiff
       ]);
     }
   });

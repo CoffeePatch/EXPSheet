@@ -80,6 +80,7 @@ The script writes these columns:
 | Manual Outflow | Sum of negative amounts in `List` for that date. |
 | Bank Outflow | Sum of SBI `Debit` values as **negative totals**. |
 | Outflow Diff | `Manual Outflow - Bank Outflow`. |
+| Overall Diff | `Inflow Diff + Outflow Diff` (net difference for the date). |
 
 ### What the diffs mean
 
