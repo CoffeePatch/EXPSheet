@@ -111,6 +111,6 @@ Only rows with **non-zero diffs** appear in the log.
 ### Date range behavior
 
 - If `RECON_START_DATE` is set and `RECON_END_DATE` is blank, the end date defaults to the **last dated row** in `Bank_Raw`.
-- If `RECON_END_DATE` is set (for December-only workflows) and `RECON_START_DATE` is blank, the start date defaults to the **first dated row** in `Bank_Raw`.
+- If `RECON_END_DATE` is set and `RECON_START_DATE` is blank, the start date defaults to the **first dated row** in `Bank_Raw`.
 - If both dates are set, reconciliation runs only within that explicit range.
 - If neither date is set, the entire statement range is used (first to last dated row).

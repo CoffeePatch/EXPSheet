@@ -163,12 +163,6 @@ function reconResolveDateRange_(values, meta, tz) {
     endKey = bankRange.endKey;
   } else if (!startKey && endKey) {
     startKey = bankRange.startKey;
-    const endMonth = Number(String(endKey).split("-")[1]);
-    if (endMonth !== 12) {
-      console.warn(
-        "RECON_CONFIG.RECON_END_DATE provided without RECON_START_DATE; December end dates are typically used for year-end ranges. Defaulting start date to first bank row."
-      );
-    }
   } else {
     startKey = bankRange.startKey;
     endKey = bankRange.endKey;
