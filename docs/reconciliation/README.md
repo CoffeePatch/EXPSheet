@@ -2,7 +2,7 @@
 
 ## The Core Problem
 
-Manual expense tracking can miss transactions, double-count entries, or record the wrong day. `scripts/reconciliation/Reconciliation.gs` exists to **catch those gaps** by comparing your **daily inflow/outflow totals** in the `List` sheet against totals computed from the raw **SBI bank export**. Only dates with mismatches are surfaced so you can quickly fix the manual ledger.
+Manual expense tracking can miss transactions, double-count entries, or record the wrong day. `scripts/reconciliation/Reconciliation.gs` exists to **catch those gaps** by comparing your **daily inflow/outflow totals** in the `List` sheet against totals computed from a raw **bank statement export** (for example SBI). Only dates with mismatches are surfaced so you can quickly fix the manual ledger.
 
 ---
 
@@ -13,7 +13,7 @@ Manual expense tracking can miss transactions, double-count entries, or record t
 Your spreadsheet must include:
 
 - **`List`**: your manual ledger.
-- **`Bank_Raw`**: where you paste the SBI statement export.
+- **`Bank_Raw`**: where you paste the bank statement export.
 - **`Reconciliation_Log`**: created/overwritten by the script.
 
 ### 2) `List` sheet format
@@ -26,7 +26,7 @@ The reconciliation logic expects these columns by position:
 | C | Account (string identifier) |
 | E | Amount (positive = inflow, negative = outflow) |
 
-### 3) SBI export headers
+### 3) Bank export headers
 
 The script scans `Bank_Raw` until it finds a header row containing:
 
@@ -56,10 +56,10 @@ The script will stop if `RECON_TARGET_ACCOUNT` or the sheet names are not set.
 
 ---
 
-## Step-by-Step Execution (SBI Workflow)
+## Step-by-Step Execution (Bank Statement Workflow)
 
-1. **Download the SBI statement**
-   - Export the statement as **Excel** from SBI internet banking.
+1. **Download the bank statement**
+   - Export the statement as **Excel** from your bank (for example SBI internet banking).
 2. **Paste into `Bank_Raw`**
    - Open `Bank_Raw` and paste the **entire** export (including any header blocks above the column headers).
 3. **Confirm configuration**
@@ -81,10 +81,10 @@ The script writes these columns:
 |---|---|
 | Date | Displayed using `RECON_LOG_DATE_FORMAT` (default `dd/MM/yyyy`). |
 | Manual Inflow | Sum of positive amounts in `List` for that date. |
-| Bank Inflow | Sum of SBI `Credit` values for that date. |
+| Bank Inflow | Sum of bank `Credit` values for that date. |
 | Inflow Diff | `Manual Inflow - Bank Inflow`. |
 | Manual Outflow | Sum of negative amounts in `List` for that date. |
-| Bank Outflow | Sum of SBI `Debit` values as **negative totals**. |
+| Bank Outflow | Sum of bank `Debit` values as **negative totals**. |
 | Outflow Diff | `Manual Outflow - Bank Outflow`. |
 | Overall Diff | `Inflow Diff + Outflow Diff` (net difference for the date). |
 
