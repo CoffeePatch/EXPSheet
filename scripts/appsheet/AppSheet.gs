@@ -7,7 +7,7 @@
  * - Idempotent-ish processing (skip already Processed=YES rows)
  * - Header-safe dynamic mapping
  * - Batch write to List sheet
- * - Batch mark Processed in Form sheet (single write)
+ * - Batch mark Processed in the input sheet (single write)
  * - Locking to avoid concurrent trigger overlap
  * - Clear logging and strict validation
  * -----------------------------------------------------------------------------
@@ -24,7 +24,7 @@ const CONFIG = Object.freeze({
   COL_SPLIT_PERSON: "Split Person",
   COL_TRANSFER_PERSON: "Transfer Person",
 
-  // Required baseline headers in the input sheet
+  // Required baseline headers in the input sheet ("Timestamp" is auto-populated by AppSheet).
   REQUIRED_HEADERS: [
     "Timestamp",
     "Date",
@@ -123,7 +123,7 @@ function buildContext_() {
 }
 
 /**
- * Process all Form rows where Processed != YES.
+ * Process all input rows where Processed != YES.
  */
 function processUnprocessedRows_(ctx) {
   const { values, indexes } = ctx;
@@ -194,7 +194,7 @@ function mapBaseRow_(row, idx) {
 }
 
 /**
- * Generate output rows for List sheet from one Form row.
+ * Generate output rows for List sheet from one input row.
  */
 function generateOutputRows_(row, idx, mapped) {
   if (mapped.isTransfer) {
