@@ -13,6 +13,8 @@ const RECON_CONFIG = Object.freeze({
 
   RECON_TARGET_ACCOUNT: null, // TODO: set this to the exact List sheet account name in column C (case-sensitive, e.g., "9682").
   RECON_DATE_ORDER: "DMY",
+  RECON_START_DATE: "", // Optional: limit reconciliation start date (Date or string).
+  RECON_END_DATE: "", // Optional: limit reconciliation end date (Date or string).
 
   BANK_DATE_HEADERS: ["Txn Date", "Value Date"],
   BANK_DEBIT_HEADER: "Debit",
@@ -56,15 +58,21 @@ function reconcileBankStatement() {
   const manualValues = listSheet.getDataRange().getValues();
   const bankValues = bankSheet.getDataRange().getValues();
 
-  const manualTotals = reconAggregateManualTotals_(manualValues, RECON_CONFIG.RECON_TARGET_ACCOUNT, tz);
   const bankMeta = reconResolveBankColumns_(bankValues, bankSheetName);
-  const bankTotals = reconAggregateBankTotals_(bankValues, bankMeta, tz);
+  const dateRange = reconResolveDateRange_(bankValues, bankMeta, tz);
+  const manualTotals = reconAggregateManualTotals_(
+    manualValues,
+    RECON_CONFIG.RECON_TARGET_ACCOUNT,
+    tz,
+    dateRange
+  );
+  const bankTotals = reconAggregateBankTotals_(bankValues, bankMeta, tz, dateRange);
 
   const logRows = reconBuildLogRows_(manualTotals, bankTotals);
   reconWriteLog_(ss, logRows, logSheetName);
 }
 
-function reconAggregateManualTotals_(values, accountFilter, tz) {
+function reconAggregateManualTotals_(values, accountFilter, tz, dateRange) {
   const totals = {};
   if (!values || values.length < 2) return totals;
 
@@ -75,6 +83,7 @@ function reconAggregateManualTotals_(values, accountFilter, tz) {
 
     const dateKey = reconNormalizeDateKey_(row[0], tz, RECON_CONFIG.RECON_DATE_ORDER);
     if (!dateKey) continue;
+    if (!reconDateKeyInRange_(dateKey, dateRange)) continue;
 
     const amount = reconParseAmount_(row[4]);
     if (!isFinite(amount) || amount === 0) continue;
@@ -126,7 +135,87 @@ function reconResolveBankColumns_(values, bankSheetName) {
   );
 }
 
-function reconAggregateBankTotals_(values, meta, tz) {
+function reconResolveDateRange_(values, meta, tz) {
+  const startKeyConfigured = reconNormalizeDateKey_(
+    RECON_CONFIG.RECON_START_DATE,
+    tz,
+    RECON_CONFIG.RECON_DATE_ORDER
+  );
+  const endKeyConfigured = reconNormalizeDateKey_(
+    RECON_CONFIG.RECON_END_DATE,
+    tz,
+    RECON_CONFIG.RECON_DATE_ORDER
+  );
+  const bankRange = reconResolveBankBoundaryDateKeys_(values, meta, tz);
+
+  if (!bankRange.startKey || !bankRange.endKey) {
+    throw new Error(
+      `${RECON_CONFIG.SHEET_BANK_RAW} does not contain any dated rows to derive a reconciliation range.`
+    );
+  }
+
+  let startKey = startKeyConfigured;
+  let endKey = endKeyConfigured;
+
+  if (startKey && endKey) {
+    // Use explicit range.
+  } else if (startKey && !endKey) {
+    endKey = bankRange.endKey;
+  } else if (!startKey && endKey) {
+    startKey = bankRange.startKey;
+    const endMonth = Number(String(endKey).split("-")[1]);
+    if (endMonth !== 12) {
+      console.warn(
+        "RECON_CONFIG.RECON_END_DATE provided without RECON_START_DATE; defaulting start date to first bank row."
+      );
+    }
+  } else {
+    startKey = bankRange.startKey;
+    endKey = bankRange.endKey;
+  }
+
+  if (!startKey || !endKey) {
+    throw new Error(
+      "Reconciliation date range could not be resolved; check RECON_START_DATE and RECON_END_DATE."
+    );
+  }
+
+  if (startKey > endKey) {
+    throw new Error(
+      `Reconciliation date range invalid: start "${startKey}" is after end "${endKey}".`
+    );
+  }
+
+  return { startKey, endKey };
+}
+
+function reconResolveBankBoundaryDateKeys_(values, meta, tz) {
+  let startKey = "";
+  let endKey = "";
+  if (!values || values.length === 0) return { startKey, endKey };
+
+  for (let r = meta.startRow; r < values.length; r++) {
+    const row = values[r];
+    const dateKey = reconNormalizeDateKey_(row[meta.dateIdx], tz, RECON_CONFIG.RECON_DATE_ORDER);
+    if (dateKey) {
+      startKey = dateKey;
+      break;
+    }
+  }
+
+  for (let r = values.length - 1; r >= meta.startRow; r--) {
+    const row = values[r];
+    const dateKey = reconNormalizeDateKey_(row[meta.dateIdx], tz, RECON_CONFIG.RECON_DATE_ORDER);
+    if (dateKey) {
+      endKey = dateKey;
+      break;
+    }
+  }
+
+  return { startKey, endKey };
+}
+
+function reconAggregateBankTotals_(values, meta, tz, dateRange) {
   const totals = {};
   if (!values || values.length === 0) return totals;
 
@@ -134,6 +223,7 @@ function reconAggregateBankTotals_(values, meta, tz) {
     const row = values[r];
     const dateKey = reconNormalizeDateKey_(row[meta.dateIdx], tz, RECON_CONFIG.RECON_DATE_ORDER);
     if (!dateKey) continue;
+    if (!reconDateKeyInRange_(dateKey, dateRange)) continue;
 
     const debit = reconParseAmount_(row[meta.debitIdx]);
     const credit = reconParseAmount_(row[meta.creditIdx]);
@@ -223,6 +313,13 @@ function reconCollectDateKeys_(manualTotals, bankTotals) {
     keys[key] = true;
   });
   return Object.keys(keys).sort();
+}
+
+function reconDateKeyInRange_(dateKey, dateRange) {
+  if (!dateRange) return true;
+  if (dateRange.startKey && dateKey < dateRange.startKey) return false;
+  if (dateRange.endKey && dateKey > dateRange.endKey) return false;
+  return true;
 }
 
 function reconWriteLog_(ss, rows, logSheetName) {

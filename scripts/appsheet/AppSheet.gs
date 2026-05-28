@@ -1,7 +1,7 @@
 /**
- * FORM.gs
+ * AppSheet.gs
  * -----------------------------------------------------------------------------
- * Production-grade processor for Google Form expense/transfer rows.
+ * Production-grade processor for AppSheet expense/transfer rows.
  *
  * Goals:
  * - Idempotent-ish processing (skip already Processed=YES rows)
@@ -20,11 +20,11 @@ const CONFIG = Object.freeze({
   SHEET_FORM: "Form",
   SHEET_LIST: "List",
 
-  // Update if your form headers change.
+  // Update if your AppSheet headers change.
   COL_SPLIT_PERSON: "Split Person",
   COL_TRANSFER_PERSON: "Transfer Person",
 
-  // Required baseline headers in Form sheet
+  // Required baseline headers in the input sheet
   REQUIRED_HEADERS: [
     "Timestamp",
     "Date",

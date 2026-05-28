@@ -1,6 +1,6 @@
 # EXPSheet
 
-A professional, extensible **Google Apps Script** project for automated expense tracking, transfer logging, and smart multi-person splits — all driven by a simple Google Form and analysed in Google Sheets.
+A professional, extensible **Google Apps Script** project for automated expense tracking, transfer logging, and smart multi-person splits — all driven by a simple AppSheet app and analysed in Google Sheets.
 
 ---
 
@@ -11,7 +11,7 @@ A professional, extensible **Google Apps Script** project for automated expense 
 3. [Setup Requirements](#setup-requirements)
 4. [Installation](#installation)
 5. [Setting Up Triggers](#setting-up-triggers)
-6. [Form Input Types & Fill Methods](#form-input-types--fill-methods)
+6. [AppSheet Input Types & Fill Methods](#appsheet-input-types--fill-methods)
 7. [Usage Notes & Best Practices](#usage-notes--best-practices)
 8. [Contributing](#contributing)
 9. [License](#license)
@@ -23,7 +23,7 @@ A professional, extensible **Google Apps Script** project for automated expense 
 
 | # | Feature | Details |
 |---|---------|---------|
-| 1 | **Form-driven expense entry** | Submit expenses and transfers via a linked Google Form — no manual spreadsheet editing needed. |
+| 1 | **AppSheet-driven expense entry** | Submit expenses and transfers via AppSheet — no manual spreadsheet editing needed. |
 | 2 | **Automatic transaction splitting** | Group expenses are automatically divided equally across named people. |
 | 3 | **Transfer support** | Logs both the debit side (Out Account) and the credit side (In Account) from a single form entry. |
 | 4 | **Idempotent / duplicate-safe processing** | Each row is stamped `YES` in the `Processed` column after it is handled; re-runs are completely safe. |
@@ -41,20 +41,20 @@ The spreadsheet is expected to contain the following tabs:
 
 | Tab name | Role |
 |----------|------|
-| `Form` | **Input sheet.** Receives raw Google Form submissions. The script reads from this sheet. |
+| `Form` | **Input sheet.** Receives raw AppSheet submissions. The script reads from this sheet. |
 | `List` | **Output sheet.** Normalised, itemised transactions (one row per person/leg) written by the script. |
 | `Data` | *(Optional)* Static reference data — categories, accounts, and people used in the form dropdowns. |
 | `Balance` | *(Optional)* Summary formulas and per-person or per-account balance calculations. |
 | `LUX` | *(Custom)* User-specific tracking or dashboard view. |
 | `transactions` | *(Custom)* Advanced or archival transaction log. |
 
-### `Form` sheet — required columns
+### AppSheet input sheet (`Form`) — required columns
 
 The script resolves columns **by header name**, so order does not matter. All of the following must exist as column headers in row 1:
 
 | Column header | Format / notes |
 |---------------|----------------|
-| `Timestamp` | Set automatically by Google Forms (`YYYY-MM-DD HH:mm:ss`). Fallback for Date and Time fields. |
+| `Timestamp` | Set automatically by AppSheet (`YYYY-MM-DD HH:mm:ss`). Fallback for Date and Time fields. |
 | `Date` | Date of the expense (`dd/MM/yyyy`). Leave blank to fall back to Timestamp date. |
 | `Time` | Time of the expense (`HH:mm`). Also accepts shorthand like `530p`, `5:30pm`, or `5p`, plus named periods: `morning`→`09:00`, `afternoon`→`12:00`, `evening`→`17:00`, `night` (or `knight`)→`21:00`. Leave blank to fall back to Timestamp time. |
 | `Title` | Short description of the expense or transfer. |
@@ -72,15 +72,15 @@ The script resolves columns **by header name**, so order does not matter. All of
 
 > **Tip:** At least one of `Split Person` or `Transfer Person` must be present as a column; both can coexist.
 
-## Form Input Types & Fill Methods
+## AppSheet Input Types & Fill Methods
 
-This section explains what data each field accepts, and the different ways you can fill the form so values correctly replicate into the `Form` sheet.
+This section explains what data each field accepts, and the different ways you can fill the AppSheet form so values correctly replicate into the `Form` sheet.
 
 ### Field-by-field accepted data/input
 
 | Field | Data type | Accepted input | Required | Applies to |
 |---|---|---|---|---|
-| `Timestamp` | DateTime | Auto-filled by Google Forms on submit | Yes (sheet header required) | All rows |
+| `Timestamp` | DateTime | Auto-filled by AppSheet on submit | Yes (sheet header required) | All rows |
 | `Date` | Date | Any valid date value parseable by Google Sheets/Apps Script | Recommended | Transaction + Transfer |
 | `Time` | Time/Text | `HH:mm` preferred; also supports `530p`, `5:30pm`, `5p`, and named periods (`morning`, `afternoon`, `evening`, `night`/`knight`) which normalize to `09:00`, `12:00`, `17:00`, `21:00` | Optional | Transaction + Transfer |
 | `Title` | Text | Any short description | Recommended | Transaction + Transfer |
@@ -96,9 +96,9 @@ This section explains what data each field accepts, and the different ways you c
 | `In Account` | Text/Choice | Destination account name | Yes for transfer rows | Transfer |
 | `Transfer Person` | Text/Choice | Person name; defaults to `me` if blank | Optional | Transfer |
 
-### How many ways can you fill the form?
+### How many ways can you fill the AppSheet form?
 
-You can fill the form in **3 practical ways**:
+You can fill the AppSheet form in **3 practical ways**:
 
 1. **Single-person transaction**  
    Use `Transaction Type = Transaction`, set `Amount`, `Account`, `Category`, `Type`, and one person (or leave blank to default to `me`).
@@ -117,7 +117,7 @@ You can fill the form in **3 practical ways**:
 
 ### How this replicates in the `Form` sheet
 
-- Every Google Form submission creates one raw row in the `Form` tab.
+- Every AppSheet submission creates one raw row in the `Form` tab.
 - `processFormResponses` reads unprocessed rows (`Processed` not `YES`).
 - Valid rows are transformed and appended to `List`.
 - Successfully handled `Form` rows are marked `YES` in `Processed`.
@@ -144,7 +144,7 @@ The script appends one or more rows per processed form entry. The columns writte
 
 ## Bank Reconciliation (Manual vs Bank)
 
-The script includes a manual reconciliation helper in `Reconciliation.gs` to compare your `List` tab against a pasted bank statement.
+The script includes a manual reconciliation helper in `scripts/reconciliation/Reconciliation.gs` to compare your `List` tab against a pasted bank statement.
 
 **Expected tabs**
 - `List` (existing): Date in column A, Account in column C, Amount in column E.
@@ -153,11 +153,12 @@ The script includes a manual reconciliation helper in `Reconciliation.gs` to com
   - If your tab names differ, update `SHEET_LIST`, `SHEET_BANK_RAW`, and `SHEET_RECON_LOG` in `RECON_CONFIG`.
 
 **How to run**
-1. Update `RECON_CONFIG` values in `Reconciliation.gs`:
+1. Update `RECON_CONFIG` values in `scripts/reconciliation/Reconciliation.gs`:
     - `RECON_TARGET_ACCOUNT` (account name to match in `List`)
     - `RECON_DATE_ORDER` (`DMY` or `MDY`, used when dates are ambiguous like `03/04/2026`)
     - `SHEET_LIST`, `SHEET_BANK_RAW`, `SHEET_RECON_LOG` (if you use different tab names)
     - `RECON_LOG_DATE_FORMAT` (format for the Date column in `Reconciliation_Log`)
+    - `RECON_START_DATE`, `RECON_END_DATE` (optional date bounds; blank defaults to statement start/end)
     - `BANK_DATE_HEADERS` (acceptable date header names in `Bank_Raw`)
     - `BANK_DEBIT_HEADER`, `BANK_CREDIT_HEADER` (debit/credit header names in `Bank_Raw`)
 2. Run `reconcileBankStatement()` from the Apps Script editor.
@@ -168,7 +169,7 @@ The log outputs: Date, Manual Inflow, Bank Inflow, Inflow Diff, Manual Outflow, 
 
 ## Setup Requirements
 
-- A **Google Account** with access to Google Sheets and Google Forms.
+- A **Google Account** with access to Google Sheets and AppSheet.
 - Your own **Google Sheet** with the tabs and columns described above, *or* a copy of the EXPSheet template.
 - **Apps Script permissions** granted on first run (the script accesses your spreadsheet and requires script-lock access).
 
@@ -178,8 +179,8 @@ The log outputs: Date, Manual Inflow, Bank Inflow, Inflow Diff, Manual Outflow, 
 
 1. Open your Google Sheet.
 2. Navigate to **Extensions → Apps Script**.
-3. In the editor, create a new script file named `FORM.gs` (click the **+** next to *Files*).
-4. Copy the entire contents of [`FORM.gs`](./FORM.gs) from this repository and paste it into the editor.
+3. In the editor, create a new script file named `AppSheet.gs` (click the **+** next to *Files*).
+4. Copy the entire contents of [`scripts/appsheet/AppSheet.gs`](./scripts/appsheet/AppSheet.gs) from this repository and paste it into the editor.
 5. Review the `CONFIG` block at the top of the file:
 
    ```javascript
@@ -206,7 +207,7 @@ The log outputs: Date, Manual Inflow, Bank Inflow, Inflow Diff, Manual Outflow, 
 
 ### Recommended trigger strategy
 
-Use **one installable time-driven trigger** for `processFormResponses` and remove old `On form submit` triggers for the same function.
+Use **one installable time-driven trigger** for `processFormResponses` and remove any legacy `On form submit` triggers for the same function.
 
 Why this is recommended:
 - It is stable for both real-time and backlog processing.
@@ -237,7 +238,7 @@ Select **`processFormResponses`** from the run-function dropdown and click **Run
 
 - **Error rate shows 100% in Triggers:** delete old/wrong trigger entries and recreate one clean time-driven trigger for `processFormResponses`.
 - **No new rows processed:** verify the trigger is `Time-driven` and function name is exactly `processFormResponses`.
-- **Script still uses old settings:** save the latest `FORM.gs`, then remove and re-add the trigger.
+- **Script still uses old settings:** save the latest `AppSheet.gs`, then remove and re-add the trigger.
 
 ### How the processing loop works
 
@@ -273,7 +274,7 @@ If the trigger was not running for a period (e.g., script errors, quota exceeded
 - The script uses `LockService` to serialise concurrent trigger executions, preventing race conditions during batch writes.
 
 ### Changing sheet or column names
-1. Update the corresponding constant in the `CONFIG` block in `FORM.gs`.
+1. Update the corresponding constant in the `CONFIG` block in `AppSheet.gs`.
 2. Save and verify your existing trigger still points to `processFormResponses`.
 
 ### Error handling
@@ -301,7 +302,7 @@ Contributions, bug reports, and feature requests are welcome!
 2. **Fork** the repository and create a branch for your changes.
 3. Submit a **pull request** with a clear description of what you changed and why.
 
-For quick customisations (different date formats, extra output columns, alternate trigger intervals), editing the `CONFIG` block in `FORM.gs` is usually sufficient without needing to fork.
+For quick customisations (different date formats, extra output columns, alternate trigger intervals), editing the `CONFIG` block in `AppSheet.gs` is usually sufficient without needing to fork.
 
 ---
 

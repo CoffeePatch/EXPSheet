@@ -2,7 +2,7 @@
 
 ## The Core Problem
 
-Manual expense tracking can miss transactions, double-count entries, or record the wrong day. `Reconciliation.gs` exists to **catch those gaps** by comparing your **daily inflow/outflow totals** in the `List` sheet against totals computed from the raw **SBI bank export**. Only dates with mismatches are surfaced so you can quickly fix the manual ledger.
+Manual expense tracking can miss transactions, double-count entries, or record the wrong day. `scripts/reconciliation/Reconciliation.gs` exists to **catch those gaps** by comparing your **daily inflow/outflow totals** in the `List` sheet against totals computed from the raw **SBI bank export**. Only dates with mismatches are surfaced so you can quickly fix the manual ledger.
 
 ---
 
@@ -38,7 +38,7 @@ These must appear **on the same row**. If your export uses different labels, upd
 
 ### 4) Required configuration
 
-In `Reconciliation.gs`, set the account you want to reconcile and confirm your tab names:
+In `scripts/reconciliation/Reconciliation.gs`, set the account you want to reconcile and confirm your tab names:
 
 ```javascript
 const RECON_CONFIG = Object.freeze({
@@ -46,6 +46,8 @@ const RECON_CONFIG = Object.freeze({
   SHEET_BANK_RAW: "Bank_Raw",
   SHEET_RECON_LOG: "Reconciliation_Log",
   RECON_LOG_DATE_FORMAT: "dd/MM/yyyy",
+  RECON_START_DATE: "", // optional
+  RECON_END_DATE: "", // optional
   RECON_TARGET_ACCOUNT: "9682", // exact List sheet account name in column C (case-sensitive)
 });
 ```
@@ -63,6 +65,7 @@ The script will stop if `RECON_TARGET_ACCOUNT` or the sheet names are not set.
 3. **Confirm configuration**
    - Ensure `RECON_TARGET_ACCOUNT` matches the exact account string used in `List` column C.
    - Set `RECON_DATE_ORDER` if your dates are ambiguous (e.g., `03/04/2026`).
+   - Use `RECON_START_DATE`/`RECON_END_DATE` to limit the reconciliation window. If you only set one date, the script will use the first/last bank statement row to complete the range.
 4. **Run the script**
    - In Apps Script, run `reconcileBankStatement()`.
 5. **Review `Reconciliation_Log`**
@@ -104,3 +107,10 @@ Only rows with **non-zero diffs** appear in the log.
 - Reconciliation is **single-account**: only `List` rows where column C equals `RECON_TARGET_ACCOUNT` are included.
 - `Reconciliation_Log` is **overwritten** on each run.
 - The script **does not modify** `List`.
+
+### Date range behavior
+
+- If `RECON_START_DATE` is set and `RECON_END_DATE` is blank, the end date defaults to the **last dated row** in `Bank_Raw`.
+- If `RECON_END_DATE` is set (for December-only workflows) and `RECON_START_DATE` is blank, the start date defaults to the **first dated row** in `Bank_Raw`.
+- If both dates are set, reconciliation runs only within that explicit range.
+- If neither date is set, the entire statement range is used (first to last dated row).
