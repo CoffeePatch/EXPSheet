@@ -13,8 +13,8 @@ const RECON_CONFIG = Object.freeze({
 
   RECON_TARGET_ACCOUNT: null, // TODO: set this to the exact List sheet account name in column C (case-sensitive, e.g., "9682").
   RECON_DATE_ORDER: "DMY",
-  RECON_START_DATE: "", // Optional: limit reconciliation start date (Date or string).
-  RECON_END_DATE: "", // Optional: limit reconciliation end date (Date or string).
+  RECON_START_DATE: "", // Optional: limit reconciliation start date (Date or "yyyy-MM-dd" / "dd-MM-yyyy" / "dd/MM/yyyy").
+  RECON_END_DATE: "", // Optional: limit reconciliation end date (Date or "yyyy-MM-dd" / "dd-MM-yyyy" / "dd/MM/yyyy").
 
   BANK_DATE_HEADERS: ["Txn Date", "Value Date"],
   BANK_DEBIT_HEADER: "Debit",

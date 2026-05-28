@@ -24,7 +24,8 @@ const CONFIG = Object.freeze({
   COL_SPLIT_PERSON: "Split Person",
   COL_TRANSFER_PERSON: "Transfer Person",
 
-  // Required baseline headers in the input sheet ("Timestamp" should be populated via an AppSheet initial value expression, e.g., NOW()).
+  // Required baseline headers in the input sheet.
+  // "Timestamp" should be populated via an AppSheet initial value expression, e.g., NOW().
   REQUIRED_HEADERS: [
     "Timestamp",
     "Date",
