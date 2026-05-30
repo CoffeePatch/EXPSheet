@@ -1,15 +1,13 @@
 # Bank Reconciliation
 
-This folder contains the reconciliation helper and the manual setup notes for comparing `List` against a bank export pasted into `Bank_Raw`.
+This folder contains the reconciliation helper and the setup notes for comparing `List` against a bank export pasted into `Bank_Raw`.
 
-`Reconciliation.gs` now supports custom date ranges:
+`Reconciliation.gs` supports custom date ranges:
 
 - start date only set: the script uses the last bank-row date as the end bound
 - end date only set: the script uses the first bank-row date as the start bound
 - both dates set: the script uses that exact range
 - neither date set: the script uses the full statement range from the first bank row to the last bank row
-
----
 
 ## Required Sheets
 
@@ -26,8 +24,6 @@ The script reads `List` by position:
 | A | Date |
 | C | Account identifier |
 | E | Amount, where positive values are inflow and negative values are outflow |
-
----
 
 ## Configuration
 
@@ -48,8 +44,6 @@ Update the `RECON_CONFIG` block in [Reconciliation.gs](Reconciliation.gs):
 
 Use either a real date value or a parsable date string for `RECON_START_DATE` and `RECON_END_DATE`.
 
----
-
 ## Step-by-Step Setup
 
 1. Export your bank statement and paste the full sheet into `Bank_Raw`, including any header rows above the transaction table.
@@ -59,8 +53,6 @@ Use either a real date value or a parsable date string for `RECON_START_DATE` an
 5. Save the script.
 6. Run `reconcileBankStatement()` from the Apps Script editor.
 7. Review `Reconciliation_Log` for the dates with non-zero differences.
-
----
 
 ## Output Columns
 
@@ -78,8 +70,6 @@ The script writes these columns to `Reconciliation_Log`:
 | Overall Diff | `Inflow Diff + Outflow Diff`. |
 
 Only dates with non-zero diffs are written.
-
----
 
 ## Tips
 
