@@ -37,6 +37,14 @@ Key values:
 - `BANK_DATE_HEADERS`
 - `BANK_DEBIT_HEADER`
 - `BANK_CREDIT_HEADER`
+ - `RECON_START_DATE` (optional)
+ - `RECON_END_DATE` (optional)
+
+If `RECON_START_DATE` and/or `RECON_END_DATE` are set in `RECON_CONFIG`, the script restricts reconciliation to that inclusive date range. Behavior:
+
+- If only `RECON_START_DATE` is provided, the script uses the bank statement's last date as the end date.
+- If only `RECON_END_DATE` is provided, the script uses the bank statement's first date as the start date.
+- If both are omitted, the script uses the full bank statement range (first to last date).
 
 ## Bank Export Expectations
 
@@ -54,6 +62,7 @@ If your export uses different labels, update the constants in `RECON_CONFIG` ins
 
 1. Set `RECON_TARGET_ACCOUNT` to the exact account name you want to reconcile.
 2. Confirm the sheet names in `RECON_CONFIG` match your workbook.
+3. (Optional) Set `RECON_START_DATE` and/or `RECON_END_DATE` in `RECON_CONFIG` to restrict the range.
 3. Paste the bank export into `Bank_Raw`.
 4. Run `reconcileBankStatement()` from the Apps Script editor.
 
