@@ -1,6 +1,6 @@
 # EXPSheet
 
-A professional, extensible **Google Apps Script** project for automated expense tracking, transfer logging, and smart multi-person splits — all driven by a simple AppSheet app and analysed in Google Sheets.
+A professional, extensible **Google Sheets + Apps Script** toolkit for expense tracking and reconciliation, with AppSheet-based data entry guidance. AppSheet is Google’s no-code application development platform for building apps on top of data sources like Google Sheets.
 
 ---
 
@@ -9,13 +9,11 @@ A professional, extensible **Google Apps Script** project for automated expense 
 1. [Features](#features)
 2. [Sheet Structure](#sheet-structure)
 3. [Setup Requirements](#setup-requirements)
-4. [Installation](#installation)
-5. [Setting Up Triggers](#setting-up-triggers)
-6. [AppSheet Input Types & Fill Methods](#appsheet-input-types--fill-methods)
-7. [Usage Notes & Best Practices](#usage-notes--best-practices)
-8. [Contributing](#contributing)
-9. [License](#license)
-10. [Disclaimer](#disclaimer)
+4. [AppSheet Input Types & Fill Methods](#appsheet-input-types--fill-methods)
+5. [Bank Reconciliation (Manual vs Bank)](#bank-reconciliation-manual-vs-bank)
+6. [Contributing](#contributing)
+7. [License](#license)
+8. [Disclaimer](#disclaimer)
 
 ---
 
@@ -23,15 +21,9 @@ A professional, extensible **Google Apps Script** project for automated expense 
 
 | # | Feature | Details |
 |---|---------|---------|
-| 1 | **AppSheet-driven expense entry** | Submit expenses and transfers via AppSheet — no manual spreadsheet editing needed. |
-| 2 | **Automatic transaction splitting** | Group expenses are automatically divided equally across named people. |
-| 3 | **Transfer support** | Logs both the debit side (Out Account) and the credit side (In Account) from a single form entry. |
-| 4 | **Idempotent / duplicate-safe processing** | Each row is stamped `YES` in the `Processed` column after it is handled; re-runs are completely safe. |
-| 5 | **Batch / catch-up processing** | Unprocessed rows from periods of downtime are automatically backfilled on the next successful run. |
-| 6 | **Concurrent-run protection** | `LockService` prevents two trigger executions from racing and writing duplicate rows. |
-| 7 | **Header-safe dynamic mapping** | Column positions are resolved by name at runtime — reordering columns does not break the script. |
-| 8 | **Robust error logging** | Row-level failures are logged and skipped; successful rows continue to be processed normally. |
-| 9 | **Direct time-driven scheduling** | Configure one trigger directly on `processFormResponses` and choose the time cadence that fits your workflow. |
+| 1 | **AppSheet-friendly intake** | Define an AppSheet form that writes submissions into the `Form` sheet. |
+| 2 | **Structured sheet layout** | A consistent tab and column layout to support expense tracking workflows. |
+| 3 | **Bank reconciliation helper** | Includes a reconciliation script to compare manual entries against bank statements. |
 
 ---
 
@@ -41,16 +33,16 @@ The spreadsheet is expected to contain the following tabs:
 
 | Tab name | Role |
 |----------|------|
-| `Form` | **Input sheet.** Receives raw AppSheet submissions. The script reads from this sheet. |
-| `List` | **Output sheet.** Normalised, itemised transactions (one row per person/leg) written by the script. |
+| `Form` | **Input sheet.** Receives raw AppSheet submissions for downstream processing or manual workflows. |
+| `List` | **Output sheet.** Normalised, itemised transactions populated by your workflow or automation. |
 | `Data` | *(Optional)* Static reference data — categories, accounts, and people used in the form dropdowns. |
 | `Balance` | *(Optional)* Summary formulas and per-person or per-account balance calculations. |
 | `LUX` | *(Custom)* User-specific tracking or dashboard view. |
 | `transactions` | *(Custom)* Advanced or archival transaction log. |
 
-### AppSheet input sheet (`Form`) — required columns
+### AppSheet input sheet (`Form`) — recommended columns
 
-The script resolves columns **by header name**, so order does not matter. All of the following must exist as column headers in row 1:
+Downstream processing typically resolves columns **by header name**, so order does not matter. The following are recommended column headers in row 1:
 
 | Column header | Format / notes |
 |---------------|----------------|
@@ -58,9 +50,9 @@ The script resolves columns **by header name**, so order does not matter. All of
 | `Date` | Date of the expense (`dd/MM/yyyy`). Leave blank to fall back to Timestamp date. |
 | `Time` | Time of the expense (`HH:mm`). Also accepts shorthand like `530p`, `5:30pm`, or `5p`, plus named periods: `morning`→`09:00`, `afternoon`→`12:00`, `evening`→`17:00`, `night` (or `knight`)→`21:00`. Leave blank to fall back to Timestamp time. |
 | `Title` | Short description of the expense or transfer. |
-| `Amount` | Positive number. Negative sign is applied automatically by the script based on direction. |
+| `Amount` | Positive number. Apply sign in your processing workflow if needed. |
 | `Transaction Type` | Must contain the word `Transaction` or `Transfer` (case-insensitive). |
-| `Processed` | **Managed by the script.** Leave blank in new rows; the script writes `YES` here when done. |
+| `Processed` | Optional status flag for your workflow (for example, `YES` when processed). |
 | `Account` | Account used for the expense *(Transaction rows only)*. |
 | `Category` | Expense category *(Transaction rows only)*. |
 | `Type` | `IN` or `OUT` *(Transaction rows only)*. |
@@ -86,7 +78,7 @@ This section explains what data each field accepts, and the different ways you c
 | `Title` | Text | Any short description | Recommended | Transaction + Transfer |
 | `Amount` | Number | Positive numeric value (`100`, `100.50`) | Yes | Transaction + Transfer |
 | `Transaction Type` | Text/Choice | Must include `Transaction` or `Transfer` (case-insensitive) | Yes | All rows |
-| `Processed` | Text flag | Leave blank; script writes `YES` after successful processing | Script-managed | All rows |
+| `Processed` | Text flag | Optional status flag you can set/update in your workflow (for example `YES`) | Optional | All rows |
 | `Account` | Text/Choice | Account name | Yes for transaction rows | Transaction |
 | `Category` | Text/Choice | Category name | Yes for transaction rows | Transaction |
 | `Type` | Text/Choice | `IN` or `OUT` | Yes for transaction rows | Transaction |
@@ -109,22 +101,20 @@ You can fill the AppSheet form in **3 practical ways**:
    - semicolon: `me; Alice; Bob`
    - new lines: one person per line  
    - dot: `me.Alice.Bob`  
-   The script splits the total amount equally and writes one `List` row per person.
+   Split the total amount equally across the listed people in your processing workflow.
 
 3. **Account transfer**  
-   Use `Transaction Type = Transfer`, and provide `Out Account` + `In Account` (+ optional `Transfer Person`).  
-   The script writes two `List` rows: one `OUT` and one `IN`.
+   Use `Transaction Type = Transfer`, and provide `Out Account` + `In Account` (+ optional `Transfer Person`).
 
 ### How this replicates in the `Form` sheet
 
 - Every AppSheet submission creates one raw row in the `Form` tab.
-- `processFormResponses` reads unprocessed rows (`Processed` not `YES`).
-- Valid rows are transformed and appended to `List`.
-- Successfully handled `Form` rows are marked `YES` in `Processed`.
+- Use your own workflow (Apps Script, formulas, or external tools) to transform `Form` rows into `List`.
+- If you track processing status, update the `Processed` column as part of that workflow.
 
-### `List` sheet — output columns
+### `List` sheet — suggested columns
 
-The script appends one or more rows per processed form entry. The columns written are (in order):
+If you normalize `Form` entries into `List`, the following column order is commonly used. The reconciliation helper only requires Date (column A), Account (column C), and Amount (column E).
 
 | # | Column | Description |
 |---|--------|-------------|
@@ -171,126 +161,7 @@ The log outputs: Date, Manual Inflow, Bank Inflow, Inflow Diff, Manual Outflow, 
 
 - A **Google Account** with access to Google Sheets and AppSheet.
 - Your own **Google Sheet** with the tabs and columns described above, *or* a copy of the EXPSheet template.
-- **Apps Script permissions** granted on first run (the script accesses your spreadsheet and requires script-lock access).
-
----
-
-## Installation
-
-1. Open your Google Sheet.
-2. Navigate to **Extensions → Apps Script**.
-3. In the editor, create a new script file named `AppSheet.gs` (click the **+** next to *Files*).
-4. Copy the entire contents of [`scripts/appsheet/AppSheet.gs`](./scripts/appsheet/AppSheet.gs) from this repository and paste it into the editor.
-5. Review the `CONFIG` block at the top of the file:
-
-   ```javascript
-   const CONFIG = Object.freeze({
-     SHEET_FORM: "Form",          // Name of your intake tab
-     SHEET_LIST: "List",          // Name of your output tab
-     COL_SPLIT_PERSON: "Split Person",     // Exact header for the split-persons column
-     COL_TRANSFER_PERSON: "Transfer Person", // Exact header for the transfer-person column
-     DATE_FORMAT: "dd/MM/yyyy",
-     TIME_FORMAT: "HH:mm",
-     ...
-   });
-   ```
-
-   Update any value that differs from your actual sheet or column names.
-
-6. **Save** (`Ctrl+S` / `Cmd+S`).
-
-> **Important:** If you ever rename a sheet tab or a column header, you must update the corresponding value in `CONFIG` or the script will throw a clear error and stop safely.
-
----
-
-## Setting Up Triggers
-
-### Recommended trigger strategy
-
-Use **one installable time-driven trigger** for `processFormResponses` and remove any legacy `On form submit` triggers for the same function.
-
-Why this is recommended:
-- It is stable for both real-time and backlog processing.
-- It automatically catches up rows that were missed during downtime.
-- It avoids duplicate/overlapping trigger patterns.
-
-### Clean old triggers first (important)
-
-1. Open Apps Script → **Triggers** (clock icon).
-2. Delete any old trigger that runs `processFormResponses` with **Event source = From spreadsheet** and **Event type = On form submit**.
-3. Keep only one active trigger pattern for this project (time-driven).
-
-### Create the correct trigger (UI method)
-
-1. Apps Script → **Triggers** → **Add Trigger**
-2. Choose function: `processFormResponses`
-3. Event source: `Time-driven`
-4. Type of time based trigger: choose the cadence you want (for example every minute, every 5 minutes, every 10 minutes, every 15 minutes, or every 30 minutes)
-5. Save
-
-> Use exactly one active time-driven trigger for `processFormResponses`.
-
-### Manual run (debugging / one-off catch-up)
-
-Select **`processFormResponses`** from the run-function dropdown and click **Run**. This processes all pending rows immediately.
-
-### Quick troubleshooting
-
-- **Error rate shows 100% in Triggers:** delete old/wrong trigger entries and recreate one clean time-driven trigger for `processFormResponses`.
-- **No new rows processed:** verify the trigger is `Time-driven` and function name is exactly `processFormResponses`.
-- **Script still uses old settings:** save the latest `AppSheet.gs`, then remove and re-add the trigger.
-
-### How the processing loop works
-
-```text
-On your selected trigger cadence (or on manual run):
-  ┌─ Acquire script lock (30 s timeout) ─────────────────────────────┐
-  │  1. Read all rows from the "Form" sheet.                          │
-  │  2. Skip rows where Processed = "YES".                            │
-  │  3. For each unprocessed row:                                     │
-  │       a. Validate required fields (amount, date, type, etc.).     │
-  │       b. Build output row(s) — one per person for splits,         │
-  │          two per transfer (debit + credit).                        │
-  │       c. On error: log & skip row (it will retry next run).       │
-  │  4. Append all valid output rows to "List" in one batch write.    │
-  │  5. Mark all successfully processed rows as "YES" in one write.   │
-  └─ Release lock ────────────────────────────────────────────────────┘
-```
-
-### Catch-up / backfill for historical rows
-
-If the trigger was not running for a period (e.g., script errors, quota exceeded, or project disabled), all rows where `Processed` is still blank will be picked up automatically on the next successful run — **no manual intervention is required**. Simply fix any script error and let the trigger fire, or run `processFormResponses` manually.
-
----
-
-## Usage Notes & Best Practices
-
-### Permissions
-- The script must be run by a user who has **Edit access** to all relevant Google Sheets.
-- Triggers run as the **owner** of the Apps Script project. Ensure the project owner's account remains active and has the necessary permissions.
-
-### Duplicate prevention
-- The `Processed` column is the source of truth. Once a row is marked `YES`, it is never re-processed.
-- The script uses `LockService` to serialise concurrent trigger executions, preventing race conditions during batch writes.
-
-### Changing sheet or column names
-1. Update the corresponding constant in the `CONFIG` block in `AppSheet.gs`.
-2. Save and verify your existing trigger still points to `processFormResponses`.
-
-### Error handling
-- If a **required header is missing**, the script throws immediately and logs the problem — no partial writes occur.
-- If an **individual row** has invalid data (bad amount, missing account, unknown transaction type), that row is logged and skipped; all other rows in the same run continue normally.
-- Failed rows are **not** marked as processed, so they will be retried on the next run once the data is corrected.
-
-### Split logic
-- The `Split Person` field accepts a comma-, semicolon-, newline-, or dot-separated list (e.g., `me, Alice, Bob` or `me.Alice.Bob`).
-- Dot (`.`) is always treated as a person separator in `Split Person`.
-- The total amount is divided equally; each person receives their own row in `List`.
-- `me` rows with a non-credit/non-pending account are automatically marked `Settled`.
-
-### Transfer logic
-- A transfer creates **two rows** in `List`: one `OUT` from the source account and one `IN` to the destination account, both marked `Completed`.
-- If `Transaction Notes` is filled for a transfer row, the note is appended to both transfer entries (for example: `Transfer Out - your note` and `Transfer In - your note`).
+- **Apps Script permissions** granted on first run if you run the reconciliation helper script.
 
 ---
 
@@ -301,8 +172,6 @@ Contributions, bug reports, and feature requests are welcome!
 1. **Open an issue** at [github.com/CoffeePatch/EXPSheet/issues](https://github.com/CoffeePatch/EXPSheet/issues) to discuss what you would like to change.
 2. **Fork** the repository and create a branch for your changes.
 3. Submit a **pull request** with a clear description of what you changed and why.
-
-For quick customisations (different date formats, extra output columns, alternate trigger intervals), editing the `CONFIG` block in `AppSheet.gs` is usually sufficient without needing to fork.
 
 ---
 
