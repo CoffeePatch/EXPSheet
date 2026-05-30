@@ -11,6 +11,18 @@ const RECON_CONFIG = Object.freeze({
   SHEET_RECON_LOG: "Reconciliation_Log", // Change to customize the output tab name.
   RECON_LOG_DATE_FORMAT: "dd/MM/yyyy", // Output format for the Date column in Reconciliation_Log.
 
+  // Optional: if your bank statement lives in a different Google Sheets file,
+  // set BANK_SPREADSHEET_ID and (optionally) BANK_SHEET_NAME.
+  // - If BANK_SPREADSHEET_ID is null/blank, the script reads Bank_Raw from the active spreadsheet.
+  // - If BANK_SPREADSHEET_ID is set, the script opens that spreadsheet and reads BANK_SHEET_NAME
+  //   (or falls back to SHEET_BANK_RAW when BANK_SHEET_NAME is not set).
+  BANK_SPREADSHEET_ID: null,
+  BANK_SHEET_NAME: null,
+
+  // Optional: when true, ignore any dates before BOTH datasets have started (overlap window).
+  // This helps avoid early-bank-date mismatches when your manual ledger starts later.
+  RECON_USE_OVERLAP_START_DATE: false,
+
   // Output control:
   // - "SUMMARY_ONLY": current behavior (1 row per mismatched date).
   // - "SINGLE_SHEET": one flat, sortable table with SUMMARY + TXN rows in SHEET_RECON_LOG.
@@ -61,11 +73,19 @@ function reconcileBankStatement() {
   }
 
   const listSheet = ss.getSheetByName(listSheetName);
-  const bankSheet = ss.getSheetByName(bankSheetName);
+
+  const bankSpreadsheetId = String(RECON_CONFIG.BANK_SPREADSHEET_ID || "").trim();
+  const bankWorkbook = bankSpreadsheetId ? SpreadsheetApp.openById(bankSpreadsheetId) : ss;
+  const bankSheetEffectiveName =
+    reconNormalizeSheetName_(RECON_CONFIG.BANK_SHEET_NAME) || bankSheetName;
+  const bankSheet = bankWorkbook.getSheetByName(bankSheetEffectiveName);
 
   if (!listSheet || !bankSheet) {
+    const bankLocation = bankSpreadsheetId
+      ? `spreadsheetId=${bankSpreadsheetId}, sheet="${bankSheetEffectiveName}"`
+      : `sheet="${bankSheetEffectiveName}" in active spreadsheet`;
     throw new Error(
-      `Missing sheet(s). Required: "${listSheetName}" and "${bankSheetName}".`
+      `Missing sheet(s). Required: "${listSheetName}" and bank ${bankLocation}.`
     );
   }
 
@@ -80,7 +100,7 @@ function reconcileBankStatement() {
   const bankValues = bankSheet.getDataRange().getValues();
 
   // Determine totals and bank column metadata
-  const bankMeta = reconResolveBankColumns_(bankValues, bankSheetName);
+  const bankMeta = reconResolveBankColumns_(bankValues, bankSheetEffectiveName);
 
   // Determine bank statement first/last date keys for range resolution.
   let firstBankDateKey = "";
@@ -117,6 +137,24 @@ function reconcileBankStatement() {
     throw new Error(`Configured start date "${rangeStartKey}" is after end date "${rangeEndKey}".`);
   }
 
+  if (RECON_CONFIG.RECON_USE_OVERLAP_START_DATE) {
+    const firstManualKey = reconFindFirstManualDateKey_(
+      manualValues,
+      RECON_CONFIG.RECON_TARGET_ACCOUNT,
+      tz,
+      rangeStartKey,
+      rangeEndKey
+    );
+    if (firstManualKey) {
+      rangeStartKey = firstManualKey > rangeStartKey ? firstManualKey : rangeStartKey;
+      if (rangeStartKey > rangeEndKey) {
+        throw new Error(
+          `Overlap start date "${rangeStartKey}" is after end date "${rangeEndKey}".`
+        );
+      }
+    }
+  }
+
   const bankTotals = reconAggregateBankTotals_(bankValues, bankMeta, tz, rangeStartKey, rangeEndKey);
   const manualTotalsFiltered = reconAggregateManualTotals_(manualValues, RECON_CONFIG.RECON_TARGET_ACCOUNT, tz, rangeStartKey, rangeEndKey);
 
@@ -147,6 +185,26 @@ function reconNormalizeOutputMode_(value) {
   const raw = String(value || "SUMMARY_ONLY").trim().toUpperCase();
   if (raw === "SINGLE_SHEET" || raw === "TWO_SHEETS" || raw === "SUMMARY_ONLY") return raw;
   return "SUMMARY_ONLY";
+}
+
+function reconFindFirstManualDateKey_(values, accountFilter, tz, rangeStartKey, rangeEndKey) {
+  if (!values || values.length < 2) return "";
+  let firstKey = "";
+
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const account = String(row[2] || "").trim();
+    if (account !== accountFilter) continue;
+
+    const dateKey = reconNormalizeDateKey_(row[0], tz, RECON_CONFIG.RECON_DATE_ORDER);
+    if (!dateKey) continue;
+    if (rangeStartKey && dateKey < rangeStartKey) continue;
+    if (rangeEndKey && dateKey > rangeEndKey) continue;
+
+    if (!firstKey || dateKey < firstKey) firstKey = dateKey;
+  }
+
+  return firstKey;
 }
 
 function reconAggregateManualTotals_(values, accountFilter, tz, rangeStartKey, rangeEndKey) {

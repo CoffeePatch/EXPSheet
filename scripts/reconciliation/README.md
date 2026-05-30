@@ -61,6 +61,9 @@ Key values:
 - `RECON_TARGET_ACCOUNT`
 - `RECON_DATE_ORDER`
 - `RECON_LOG_DATE_FORMAT`
+- `BANK_SPREADSHEET_ID` (optional, when the bank statement is in a different workbook)
+- `BANK_SHEET_NAME` (optional, bank sheet name override)
+- `RECON_USE_OVERLAP_START_DATE` (optional)
 - `OUTPUT_MODE`
 - `SHEET_RECON_SUMMARY` (when `OUTPUT_MODE` is `TWO_SHEETS`)
 - `SHEET_RECON_DETAILS` (when `OUTPUT_MODE` is `TWO_SHEETS`)
@@ -71,6 +74,21 @@ Key values:
  - `MANUAL_DESC_HEADERS` (optional, for detailed output)
  - `RECON_START_DATE` (optional)
  - `RECON_END_DATE` (optional)
+
+### External Bank Workbook (Optional)
+
+If your bank statement is stored in a separate Google Sheets file:
+
+- Set `BANK_SPREADSHEET_ID` to the external spreadsheet ID.
+- Set `BANK_SHEET_NAME` to the sheet/tab name inside that spreadsheet.
+
+If `BANK_SHEET_NAME` is not set, the script falls back to `SHEET_BANK_RAW` as the tab name.
+
+If `BANK_SPREADSHEET_ID` is not set, the script reads `SHEET_BANK_RAW` from the active spreadsheet (current behavior).
+
+### Overlap Window (Optional)
+
+If `RECON_USE_OVERLAP_START_DATE` is `true`, the script ignores any dates that occur before the manual ledger has started (within the selected range). This helps avoid early-bank-date mismatches when the bank export includes dates earlier than the first manual transaction.
 
 ### OUTPUT_MODE
 
