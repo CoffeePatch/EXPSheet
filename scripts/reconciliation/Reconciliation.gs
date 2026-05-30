@@ -11,6 +11,14 @@ const RECON_CONFIG = Object.freeze({
   SHEET_RECON_LOG: "Reconciliation_Log", // Change to customize the output tab name.
   RECON_LOG_DATE_FORMAT: "dd/MM/yyyy", // Output format for the Date column in Reconciliation_Log.
 
+  // Output control:
+  // - "SUMMARY_ONLY": current behavior (1 row per mismatched date).
+  // - "SINGLE_SHEET": one flat, sortable table with SUMMARY + TXN rows in SHEET_RECON_LOG.
+  // - "TWO_SHEETS": writes a date summary to SHEET_RECON_SUMMARY and transactions to SHEET_RECON_DETAILS.
+  OUTPUT_MODE: "SUMMARY_ONLY",
+  SHEET_RECON_SUMMARY: "Reconciliation_Summary",
+  SHEET_RECON_DETAILS: "Reconciliation_Details",
+
   RECON_TARGET_ACCOUNT: null, // TODO: set this to the exact List sheet account name in column C (case-sensitive, e.g., "9682").
   RECON_DATE_ORDER: "DMY",
   // Optional: supply a start and/or end date to restrict the reconciliation range.
@@ -22,8 +30,13 @@ const RECON_CONFIG = Object.freeze({
   RECON_END_DATE: null,
 
   BANK_DATE_HEADERS: ["Txn Date", "Value Date"],
+  BANK_DESC_HEADERS: ["Details", "Description", "Particulars", "Narration"],
   BANK_DEBIT_HEADER: "Debit",
-  BANK_CREDIT_HEADER: "Credit"
+  BANK_CREDIT_HEADER: "Credit",
+
+  // Optional: used only for detailed outputs (SINGLE_SHEET / TWO_SHEETS)
+  // If none match, the Title/Desc column will be blank.
+  MANUAL_DESC_HEADERS: ["Title", "Notes", "Description", "Category"]
 });
 
 function reconcileBankStatement() {
@@ -31,6 +44,9 @@ function reconcileBankStatement() {
   const listSheetName = reconNormalizeSheetName_(RECON_CONFIG.SHEET_LIST);
   const bankSheetName = reconNormalizeSheetName_(RECON_CONFIG.SHEET_BANK_RAW);
   const logSheetName = reconNormalizeSheetName_(RECON_CONFIG.SHEET_RECON_LOG);
+  const outputMode = reconNormalizeOutputMode_(RECON_CONFIG.OUTPUT_MODE);
+  const summarySheetName = reconNormalizeSheetName_(RECON_CONFIG.SHEET_RECON_SUMMARY) || "Reconciliation_Summary";
+  const detailsSheetName = reconNormalizeSheetName_(RECON_CONFIG.SHEET_RECON_DETAILS) || "Reconciliation_Details";
 
   if (!listSheetName || !bankSheetName || !logSheetName) {
     const missingSheets = [];
@@ -104,8 +120,33 @@ function reconcileBankStatement() {
   const bankTotals = reconAggregateBankTotals_(bankValues, bankMeta, tz, rangeStartKey, rangeEndKey);
   const manualTotalsFiltered = reconAggregateManualTotals_(manualValues, RECON_CONFIG.RECON_TARGET_ACCOUNT, tz, rangeStartKey, rangeEndKey);
 
-  const logRows = reconBuildLogRows_(manualTotalsFiltered, bankTotals);
-  reconWriteLog_(ss, logRows, logSheetName);
+  if (outputMode === "SUMMARY_ONLY") {
+    const logRows = reconBuildLogRows_(manualTotalsFiltered, bankTotals);
+    reconWriteLog_(ss, logRows, logSheetName);
+    return;
+  }
+
+  const manualDescIdx = reconResolveManualDescIndex_(manualValues);
+  const manualByDate = reconAggregateManualByDate_(manualValues, RECON_CONFIG.RECON_TARGET_ACCOUNT, tz, rangeStartKey, rangeEndKey, manualDescIdx);
+  const bankByDate = reconAggregateBankByDate_(bankValues, bankMeta, tz, rangeStartKey, rangeEndKey);
+
+  if (outputMode === "SINGLE_SHEET") {
+    const combinedRows = reconBuildCombinedRows_(manualByDate, bankByDate);
+    reconWriteTable_(ss, combinedRows, logSheetName, RECON_CONFIG.RECON_LOG_DATE_FORMAT, 1);
+    return;
+  }
+
+  // TWO_SHEETS
+  const summaryRows = reconBuildSummaryRowsFromDaily_(manualByDate, bankByDate);
+  const detailsRows = reconBuildDetailsRowsFromDaily_(manualByDate, bankByDate);
+  reconWriteTable_(ss, summaryRows, summarySheetName, RECON_CONFIG.RECON_LOG_DATE_FORMAT, 1);
+  reconWriteTable_(ss, detailsRows, detailsSheetName, RECON_CONFIG.RECON_LOG_DATE_FORMAT, 1);
+}
+
+function reconNormalizeOutputMode_(value) {
+  const raw = String(value || "SUMMARY_ONLY").trim().toUpperCase();
+  if (raw === "SINGLE_SHEET" || raw === "TWO_SHEETS" || raw === "SUMMARY_ONLY") return raw;
+  return "SUMMARY_ONLY";
 }
 
 function reconAggregateManualTotals_(values, accountFilter, tz, rangeStartKey, rangeEndKey) {
@@ -136,6 +177,54 @@ function reconAggregateManualTotals_(values, accountFilter, tz, rangeStartKey, r
   return totals;
 }
 
+function reconResolveManualDescIndex_(values) {
+  if (!values || values.length === 0) return -1;
+  const headerRow = values[0] || [];
+  const headers = headerRow.map(reconNormalizeHeader_);
+  const candidates = (RECON_CONFIG.MANUAL_DESC_HEADERS || []).map(reconNormalizeHeader_);
+  for (let i = 0; i < candidates.length; i++) {
+    const idx = headers.indexOf(candidates[i]);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+function reconAggregateManualByDate_(values, accountFilter, tz, rangeStartKey, rangeEndKey, descIdx) {
+  const totals = {};
+  if (!values || values.length < 2) return totals;
+
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const account = String(row[2] || "").trim();
+    if (account !== accountFilter) continue;
+
+    const dateKey = reconNormalizeDateKey_(row[0], tz, RECON_CONFIG.RECON_DATE_ORDER);
+    if (!dateKey) continue;
+    if (rangeStartKey && dateKey < rangeStartKey) continue;
+    if (rangeEndKey && dateKey > rangeEndKey) continue;
+
+    const amount = reconParseAmount_(row[4]);
+    if (!isFinite(amount) || amount === 0) continue;
+
+    const title = descIdx >= 0 ? String(row[descIdx] || "").trim() : "";
+    const bucket = reconEnsureTotalsDetailed_(totals, dateKey);
+    bucket.manualTxns.push({
+      dateKey,
+      rowNumber: r + 1,
+      title,
+      amount
+    });
+
+    if (amount > 0) {
+      bucket.inflow = reconRoundCurrency_(bucket.inflow + amount);
+    } else {
+      bucket.outflow = reconRoundCurrency_(bucket.outflow + amount);
+    }
+  }
+
+  return totals;
+}
+
 function reconResolveBankColumns_(values, bankSheetName) {
   if (!values || values.length === 0) {
     throw new Error(
@@ -144,6 +233,7 @@ function reconResolveBankColumns_(values, bankSheetName) {
   }
 
   const dateHeaders = (RECON_CONFIG.BANK_DATE_HEADERS || []).map(reconNormalizeHeader_);
+  const descHeaders = (RECON_CONFIG.BANK_DESC_HEADERS || []).map(reconNormalizeHeader_);
   const debitHeader = reconNormalizeHeader_(RECON_CONFIG.BANK_DEBIT_HEADER);
   const creditHeader = reconNormalizeHeader_(RECON_CONFIG.BANK_CREDIT_HEADER);
 
@@ -156,6 +246,7 @@ function reconResolveBankColumns_(values, bankSheetName) {
 
     const debitIdx = headers.indexOf(debitHeader);
     const creditIdx = headers.indexOf(creditHeader);
+    const descIdx = descHeaders.length ? headers.findIndex((header) => descHeaders.includes(header)) : -1;
 
     if (debitIdx < 0 || creditIdx < 0) {
       throw new Error(
@@ -163,7 +254,7 @@ function reconResolveBankColumns_(values, bankSheetName) {
       );
     }
 
-    return { startRow: r + 1, dateIdx, debitIdx, creditIdx };
+    return { startRow: r + 1, dateIdx, descIdx, debitIdx, creditIdx };
   }
 
   const dateHeadersDisplay = RECON_CONFIG.BANK_DATE_HEADERS.join('" or "');
@@ -407,4 +498,263 @@ function reconEnsureTotals_(map, key) {
     map[key] = { inflow: 0, outflow: 0 };
   }
   return map[key];
+}
+
+function reconAggregateBankByDate_(values, meta, tz, rangeStartKey, rangeEndKey) {
+  const totals = {};
+  if (!values || values.length === 0) return totals;
+
+  for (let r = meta.startRow; r < values.length; r++) {
+    const row = values[r];
+    const dateKey = reconNormalizeDateKey_(row[meta.dateIdx], tz, RECON_CONFIG.RECON_DATE_ORDER);
+    if (!dateKey) continue;
+    if (rangeStartKey && dateKey < rangeStartKey) continue;
+    if (rangeEndKey && dateKey > rangeEndKey) continue;
+
+    const debit = reconParseAmount_(row[meta.debitIdx]);
+    const credit = reconParseAmount_(row[meta.creditIdx]);
+
+    if ((!isFinite(debit) || debit === 0) && (!isFinite(credit) || credit === 0)) {
+      continue;
+    }
+
+    const title = meta.descIdx >= 0 ? String(row[meta.descIdx] || "").trim() : "";
+    const bucket = reconEnsureTotalsDetailed_(totals, dateKey);
+
+    if (isFinite(credit) && credit !== 0) {
+      const amt = Math.abs(credit);
+      bucket.inflow = reconRoundCurrency_(bucket.inflow + amt);
+      bucket.bankTxns.push({
+        dateKey,
+        rowNumber: r + 1,
+        title,
+        amount: amt
+      });
+    }
+
+    if (isFinite(debit) && debit !== 0) {
+      const amt = -Math.abs(debit);
+      bucket.outflow = reconRoundCurrency_(bucket.outflow + amt);
+      bucket.bankTxns.push({
+        dateKey,
+        rowNumber: r + 1,
+        title,
+        amount: amt
+      });
+    }
+  }
+
+  return totals;
+}
+
+function reconWriteTable_(ss, rows, sheetName, dateFormat, dateColIndex1Based) {
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+
+  sheet.clearContents();
+  if (!rows || rows.length === 0) return;
+  sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+
+  const fmt = String(dateFormat || "").trim();
+  const dateCol = Number(dateColIndex1Based) || 1;
+  if (fmt && rows.length > 1) {
+    sheet.getRange(2, dateCol, rows.length - 1, 1).setNumberFormat(fmt);
+  }
+}
+
+function reconEnsureTotalsDetailed_(map, key) {
+  if (!map[key]) {
+    map[key] = { inflow: 0, outflow: 0, manualTxns: [], bankTxns: [] };
+  }
+  return map[key];
+}
+
+function reconBuildCombinedRows_(manualDaily, bankDaily) {
+  const headers = [
+    "Date",
+    "RowType",
+    "Source",
+    "Sheet Row",
+    "Title/Desc",
+    "Amount",
+    "Day Manual In",
+    "Day Bank In",
+    "Inflow Diff",
+    "Day Manual Out",
+    "Day Bank Out",
+    "Outflow Diff",
+    "Overall Diff"
+  ];
+
+  const rows = [headers];
+  const dateKeys = reconCollectDateKeys_(manualDaily, bankDaily);
+
+  dateKeys.forEach((dateKey) => {
+    const manual = manualDaily[dateKey] || { inflow: 0, outflow: 0, manualTxns: [] };
+    const bank = bankDaily[dateKey] || { inflow: 0, outflow: 0, bankTxns: [] };
+
+    const inflowDiff = reconRoundCurrency_(manual.inflow - bank.inflow);
+    const outflowDiff = reconRoundCurrency_(manual.outflow - bank.outflow);
+    const overallDiff = reconRoundCurrency_(inflowDiff + outflowDiff);
+
+    if (inflowDiff === 0 && outflowDiff === 0) return;
+
+    const dateValue = reconDateKeyToDate_(dateKey);
+    if (!dateValue) throw new Error(`Invalid normalized date key "${dateKey}".`);
+
+    rows.push([
+      dateValue,
+      "SUMMARY",
+      "",
+      "",
+      "Totals",
+      "",
+      manual.inflow,
+      bank.inflow,
+      inflowDiff,
+      manual.outflow,
+      bank.outflow,
+      outflowDiff,
+      overallDiff
+    ]);
+
+    (manual.manualTxns || []).forEach((txn) => {
+      rows.push([
+        dateValue,
+        "TXN",
+        "Manual",
+        txn.rowNumber,
+        txn.title || "",
+        txn.amount,
+        manual.inflow,
+        bank.inflow,
+        inflowDiff,
+        manual.outflow,
+        bank.outflow,
+        outflowDiff,
+        overallDiff
+      ]);
+    });
+
+    (bank.bankTxns || []).forEach((txn) => {
+      rows.push([
+        dateValue,
+        "TXN",
+        "Bank",
+        txn.rowNumber,
+        txn.title || "",
+        txn.amount,
+        manual.inflow,
+        bank.inflow,
+        inflowDiff,
+        manual.outflow,
+        bank.outflow,
+        outflowDiff,
+        overallDiff
+      ]);
+    });
+  });
+
+  return rows;
+}
+
+function reconBuildSummaryRowsFromDaily_(manualDaily, bankDaily) {
+  const headers = [
+    "Date",
+    "Manual Inflow",
+    "Bank Inflow",
+    "Inflow Diff",
+    "Manual Outflow",
+    "Bank Outflow",
+    "Outflow Diff",
+    "Overall Diff"
+  ];
+  const rows = [headers];
+  const dateKeys = reconCollectDateKeys_(manualDaily, bankDaily);
+
+  dateKeys.forEach((dateKey) => {
+    const dateValue = reconDateKeyToDate_(dateKey);
+    if (!dateValue) throw new Error(`Invalid normalized date key "${dateKey}".`);
+
+    const manual = manualDaily[dateKey] || { inflow: 0, outflow: 0 };
+    const bank = bankDaily[dateKey] || { inflow: 0, outflow: 0 };
+
+    const inflowDiff = reconRoundCurrency_(manual.inflow - bank.inflow);
+    const outflowDiff = reconRoundCurrency_(manual.outflow - bank.outflow);
+    const overallDiff = reconRoundCurrency_(inflowDiff + outflowDiff);
+
+    if (inflowDiff === 0 && outflowDiff === 0) return;
+
+    rows.push([
+      dateValue,
+      manual.inflow,
+      bank.inflow,
+      inflowDiff,
+      manual.outflow,
+      bank.outflow,
+      outflowDiff,
+      overallDiff
+    ]);
+  });
+
+  return rows;
+}
+
+function reconBuildDetailsRowsFromDaily_(manualDaily, bankDaily) {
+  const headers = [
+    "Date",
+    "Source",
+    "Sheet Row",
+    "Title/Desc",
+    "Amount",
+    "Inflow Diff",
+    "Outflow Diff",
+    "Overall Diff"
+  ];
+  const rows = [headers];
+  const dateKeys = reconCollectDateKeys_(manualDaily, bankDaily);
+
+  dateKeys.forEach((dateKey) => {
+    const manual = manualDaily[dateKey] || { inflow: 0, outflow: 0, manualTxns: [] };
+    const bank = bankDaily[dateKey] || { inflow: 0, outflow: 0, bankTxns: [] };
+
+    const inflowDiff = reconRoundCurrency_(manual.inflow - bank.inflow);
+    const outflowDiff = reconRoundCurrency_(manual.outflow - bank.outflow);
+    const overallDiff = reconRoundCurrency_(inflowDiff + outflowDiff);
+
+    if (inflowDiff === 0 && outflowDiff === 0) return;
+
+    const dateValue = reconDateKeyToDate_(dateKey);
+    if (!dateValue) throw new Error(`Invalid normalized date key "${dateKey}".`);
+
+    (manual.manualTxns || []).forEach((txn) => {
+      rows.push([
+        dateValue,
+        "Manual",
+        txn.rowNumber,
+        txn.title || "",
+        txn.amount,
+        inflowDiff,
+        outflowDiff,
+        overallDiff
+      ]);
+    });
+
+    (bank.bankTxns || []).forEach((txn) => {
+      rows.push([
+        dateValue,
+        "Bank",
+        txn.rowNumber,
+        txn.title || "",
+        txn.amount,
+        inflowDiff,
+        outflowDiff,
+        overallDiff
+      ]);
+    });
+  });
+
+  return rows;
 }

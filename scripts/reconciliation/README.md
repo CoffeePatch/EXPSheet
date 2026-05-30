@@ -14,6 +14,33 @@ This folder contains the manual reconciliation workflow for comparing the `List`
 - The log is cleared and rebuilt on each run.
 - Dates are normalized before the comparison happens.
 
+## Output Format Options
+
+The current log is optimized for spotting date-level mismatches, but it is not ideal when you want to sort or filter individual transactions. For that reason, there are three practical output styles:
+
+1. Date summary only.
+	- One row per day.
+	- Shows the total inflow and outflow difference for that date.
+	- Good for quick variance checks, but weaker for filtering specific transactions.
+
+2. Transaction-level reconciliation log.
+	- One row per transaction.
+	- Includes the transaction date, description, account, bank amount, manual amount, and difference.
+	- Best for sorting, filtering, and tracing a mismatch back to the exact transaction.
+
+3. Day grouped transaction log with repeated date rows.
+	- Copies all transactions for each day into the output sheet.
+	- Repeats the date on every transaction row and adds a difference column.
+	- Easier to sort and filter than a summary-only sheet, while keeping the output simple.
+
+Recommended workflow:
+
+- Use option 2 if you want the cleanest reconciliation experience.
+- Use option 3 if you want a simpler change that still makes filtering by date much easier.
+- Keep option 1 only if the goal is just to compare daily totals.
+
+If you want, the next step can be to convert the script to one of these formats before changing the actual output logic.
+
 ## Required Sheets
 
 | Sheet | Purpose |
@@ -34,11 +61,28 @@ Key values:
 - `RECON_TARGET_ACCOUNT`
 - `RECON_DATE_ORDER`
 - `RECON_LOG_DATE_FORMAT`
+- `OUTPUT_MODE`
+- `SHEET_RECON_SUMMARY` (when `OUTPUT_MODE` is `TWO_SHEETS`)
+- `SHEET_RECON_DETAILS` (when `OUTPUT_MODE` is `TWO_SHEETS`)
 - `BANK_DATE_HEADERS`
+- `BANK_DESC_HEADERS` (optional, for detailed output)
 - `BANK_DEBIT_HEADER`
 - `BANK_CREDIT_HEADER`
+ - `MANUAL_DESC_HEADERS` (optional, for detailed output)
  - `RECON_START_DATE` (optional)
  - `RECON_END_DATE` (optional)
+
+### OUTPUT_MODE
+
+`OUTPUT_MODE` controls what gets written to output sheets:
+
+- `SUMMARY_ONLY` (default): current behavior. Writes one row per mismatched date into `SHEET_RECON_LOG`.
+- `SINGLE_SHEET`: writes a single flat, sortable table into `SHEET_RECON_LOG`.
+	- Includes a `SUMMARY` row per mismatched date plus all manual and bank `TXN` rows for that date.
+	- Every `TXN` row repeats the day totals and diffs so you can sort/filter by `Overall Diff`.
+- `TWO_SHEETS`: writes two sheets.
+	- `SHEET_RECON_SUMMARY`: one row per mismatched date.
+	- `SHEET_RECON_DETAILS`: all manual + bank transactions for mismatched dates (in a single sheet).
 
 If `RECON_START_DATE` and/or `RECON_END_DATE` are set in `RECON_CONFIG`, the script restricts reconciliation to that inclusive date range. Behavior:
 
