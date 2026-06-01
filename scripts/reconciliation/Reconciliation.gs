@@ -121,6 +121,23 @@ function reconcileBankStatement() {
   const cfgStartKey = reconNormalizeDateKey_(RECON_CONFIG.RECON_START_DATE, tz, RECON_CONFIG.RECON_DATE_ORDER) || "";
   const cfgEndKey = reconNormalizeDateKey_(RECON_CONFIG.RECON_END_DATE, tz, RECON_CONFIG.RECON_DATE_ORDER) || "";
 
+  const startRaw = RECON_CONFIG.RECON_START_DATE;
+  const endRaw = RECON_CONFIG.RECON_END_DATE;
+  const startWasProvided = startRaw !== null && startRaw !== undefined && String(startRaw).trim() !== "";
+  const endWasProvided = endRaw !== null && endRaw !== undefined && String(endRaw).trim() !== "";
+
+  if (startWasProvided && !cfgStartKey) {
+    throw new Error(
+      'RECON_CONFIG.RECON_START_DATE is set but could not be parsed. Use a Date (e.g. new Date(2026, 4, 1)) or a string like "01/05/2026" or "2026-05-01". Do not write 01/05/2026 without quotes.'
+    );
+  }
+
+  if (endWasProvided && !cfgEndKey) {
+    throw new Error(
+      'RECON_CONFIG.RECON_END_DATE is set but could not be parsed. Use a Date (e.g. new Date(2026, 4, 31)) or a string like "31/05/2026" or "2026-05-31". Do not write 31/05/2026 without quotes.'
+    );
+  }
+
   let rangeStartKey = cfgStartKey || "";
   let rangeEndKey = cfgEndKey || "";
 
@@ -445,6 +462,26 @@ function reconNormalizeDateKey_(value, tz, dateOrder) {
   if (Object.prototype.toString.call(value) === "[object Date]") {
     if (!isNaN(value.getTime())) {
       return Utilities.formatDate(value, tz, "yyyy-MM-dd");
+    }
+  }
+
+  if (typeof value === "number" && isFinite(value)) {
+    // Support numeric date inputs without accidentally accepting expressions like 01/05/2026.
+    // - Google Sheets/Excel serial dates are typically around 40k-60k for modern years.
+    // - Epoch milliseconds are typically >= 1e12.
+    if (value >= 10000 && value <= 90000) {
+      const serialEpochMs = Date.UTC(1899, 11, 30) + value * 24 * 60 * 60 * 1000;
+      const serialDate = new Date(serialEpochMs);
+      if (!isNaN(serialDate.getTime())) {
+        return Utilities.formatDate(serialDate, tz, "yyyy-MM-dd");
+      }
+    }
+
+    if (value >= 1e12 && value <= 1e15) {
+      const epochDate = new Date(value);
+      if (!isNaN(epochDate.getTime())) {
+        return Utilities.formatDate(epochDate, tz, "yyyy-MM-dd");
+      }
     }
   }
 

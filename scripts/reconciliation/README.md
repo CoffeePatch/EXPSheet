@@ -108,6 +108,13 @@ If `RECON_START_DATE` and/or `RECON_END_DATE` are set in `RECON_CONFIG`, the scr
 - If only `RECON_END_DATE` is provided, the script uses the bank statement's first date as the start date.
 - If both are omitted, the script uses the full bank statement range (first to last date).
 
+Date value format notes:
+
+- In Apps Script / JavaScript, **do not** write dates like `01/05/2026` without quotes. That gets evaluated as math (`1/5/2026`) and will not be treated as a date.
+- Use one of these instead:
+	- A `Date` object: `new Date(2026, 4, 1)` (months are 0-based: 4 = May)
+	- A string: `"01/05/2026"` (respects `RECON_DATE_ORDER`) or `"2026-05-01"`
+
 ## Bank Export Expectations
 
 The script searches `Bank_Raw` for a header row that contains one of the configured date headers plus the debit and credit headers.
