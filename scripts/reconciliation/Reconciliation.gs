@@ -350,6 +350,11 @@ function reconAggregateBankTotals_(values, meta, tz, rangeStartKey, rangeEndKey)
     if (rangeStartKey && dateKey < rangeStartKey) continue;
     if (rangeEndKey && dateKey > rangeEndKey) continue;
 
+    const title = meta.descIdx >= 0 ? String(row[meta.descIdx] || "").trim() : "";
+    if (title.toUpperCase().includes("SWEEP FROM")) {
+      continue;
+    }
+
     const debit = reconParseAmount_(row[meta.debitIdx]);
     const credit = reconParseAmount_(row[meta.creditIdx]);
 
@@ -606,6 +611,11 @@ function reconAggregateBankByDate_(values, meta, tz, rangeStartKey, rangeEndKey)
     if (rangeStartKey && dateKey < rangeStartKey) continue;
     if (rangeEndKey && dateKey > rangeEndKey) continue;
 
+    const title = meta.descIdx >= 0 ? String(row[meta.descIdx] || "").trim() : "";
+    if (title.toUpperCase().includes("SWEEP FROM")) {
+      continue;
+    }
+
     const debit = reconParseAmount_(row[meta.debitIdx]);
     const credit = reconParseAmount_(row[meta.creditIdx]);
 
@@ -613,7 +623,6 @@ function reconAggregateBankByDate_(values, meta, tz, rangeStartKey, rangeEndKey)
       continue;
     }
 
-    const title = meta.descIdx >= 0 ? String(row[meta.descIdx] || "").trim() : "";
     const bucket = reconEnsureTotalsDetailed_(totals, dateKey);
 
     if (isFinite(credit) && credit !== 0) {

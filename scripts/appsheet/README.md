@@ -1,44 +1,53 @@
-# AppSheet Workflow
+# AppSheet Budget Workflow
 
-This folder documents the AppSheet-based intake path and the backend sweeper that normalizes rows after users submit them.
+This folder documents the primary AppSheet-based intake path and its backend **PORTFOLIO NEXUS Sweeper Engine** that normalizes and restructures rows after users submit them.
 
 ## Main Script
 
-- [IndTran.gs](IndTran.gs) contains `processTransaction()`.
+- [IndTran.gs](IndTran.gs) contains the `processTransaction()` function.
 
-## What The Script Does
+## The PORTFOLIO NEXUS Sweeper Engine
 
-`processTransaction()` reads the `List` sheet directly, normalizes rows, and appends any extra rows needed for transfers or split transactions.
+`processTransaction()` is an "Armor-Plated" sweeper designed to be triggered on every spreadsheet change. It reads the `List` sheet directly, normalizes rows, and performs complex financial routing based on the content of the rows. 
 
-- It scans the last portion of the sheet to avoid missed rows near the bottom.
-- It normalizes headers before looking them up, so spacing and case are tolerated.
-- It rewrites internal transfers and investment rows so the ledger stays consistent.
-- It splits comma-separated people into multiple rows and divides the amount equally.
+**Core Mechanism:** To prevent missing any newly inserted rows from AppSheet (which often inserts rows above blank formatted "ghost" rows at the bottom of the sheet), the engine scans the *entire* spreadsheet on every run. Because the engine is idempotent, it safely ignores already-processed rows and only acts on new ones.
 
-## Expected List Columns
+The engine relies on a robust schema. It looks for columns dynamically (case-insensitive and trimmed), specifically relying on:
+- `Account` and `Amount`: To ensure the row has data.
+- `Category`: Used to trigger Transfer logic.
+- `Debt Entity` (with fallback to `DebtEntity` or `Person`): Used to trigger Split Bill logic.
 
-The script reads these header names after normalization:
+### Module 1: Transfer & Investment Engine
 
-| Column | Purpose |
-|---|---|
-| `Account` | Ledger account or transfer target. |
-| `Amount` | Transaction amount. |
-| `Category` | Used to detect transfer and investment handling. |
-| `Person` | Person name or comma-separated split list. |
-| `Notes` | Optional notes carried through to cloned rows. |
-| `Status` | Updated for split rows that should remain pending. |
-| `Settlement Date` | Cleared for rows that should not inherit a settlement date. |
-| `Type` | Set to `IN` for appended transfer legs. |
+**Trigger:** `Category` equals `Internal Transfer`, `Investments`, `Credit Card Payment`, or `Credit Card`.
+**Logic:**
+- The engine enforces a negative amount on the original row (the "OUT" leg) and clears the `Debt Entity` column.
+- It automatically inserts a new row directly underneath the original row. This is the "IN" leg.
+- The "IN" leg has a positive amount, assigns the destination account, and is marked as `[Transfer: In]`.
+- Row IDs are updated cleanly (e.g., suffixed with `A` and `B`) to maintain unique keys for AppSheet.
 
-## Processing Rules
+### Module 2: Split Bill / Lending Engine
 
-1. If the row is empty, it is ignored.
-2. If `Category` is `internal transfers` or `investments` and `Person` is not `me`, the script converts the original row to `Me` and appends an `IN` leg.
-3. If `Person` contains commas, the script treats it as a split transaction, divides the amount equally, updates the original row, and appends one row per additional person.
-4. Appended split rows are marked `Pending`, and their settlement date is cleared.
+**Trigger:** The `Debt Entity` column contains a comma (e.g., `Me , Laxman`).
+**Logic:**
+- The engine splits the text by the comma and divides the original amount equally among all individuals.
+- It updates the original row in-place for the first person (usually `Me`), setting the amount to the divided negative share and the `Status` to `Settled`.
+- For each additional person, it inserts a new row directly underneath, appending the divided negative share and setting their `Status` to `Pending`. 
+- An audit string (e.g., `[Split: 452 / 2 = 226]`) is appended to the `Notes` of all resulting rows.
 
-## Notes
+### Module 3: Standard Expense Engine (Fallback)
 
-- Keep the `List` headers aligned with what the script expects, even though lookup is case-insensitive and trims spaces.
-- This workflow is intentionally separate from the Google Forms flow documented in [../form-submission/README.md](../form-submission/README.md).
-- If you change the ledger layout, update the script and this README together.
+**Trigger:** `Category` is standard (not a transfer) AND `Debt Entity` is either entirely blank or equals `"Me"`.
+**Logic:**
+- This is the catch-all for normal, everyday expenses.
+- The engine guarantees the amount is properly negative.
+- It normalizes `Debt Entity` to be blank (removing `"Me"`).
+
+## Setup And Triggers
+
+1. Put `IndTran.gs` into your Google Apps Script project.
+2. In the Google Apps Script Triggers dashboard, create a new trigger:
+   - **Choose which function to run:** `processTransaction`
+   - **Select event source:** `From spreadsheet`
+   - **Select event type:** `On change`
+3. This guarantees that every time AppSheet syncs a new row, the engine immediately processes, splits, and stacks the data correctly.
