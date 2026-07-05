@@ -34,6 +34,42 @@ function processTransaction() {
     return originalId.toString().slice(0, -1) + replacement;
   }
 
+  function resolveSignedAmount(typeRaw, categoryRaw, rawAmount) {
+    const type = resolveType(typeRaw, categoryRaw);
+    const amount = Math.abs(parseFloat(rawAmount) || 0);
+    return type === "IN" ? amount : -amount;
+  }
+
+  function resolveType(typeRaw, categoryRaw) {
+    const type = (typeRaw || "").toString().trim().toUpperCase();
+    if (type === "IN" || type === "OUT") return type;
+
+    const category = (categoryRaw || "").toString().trim().toLowerCase();
+    if (!category) return "OUT";
+
+    const incomeKeywords = [
+      "salary",
+      "interest",
+      "cashback",
+      "refund",
+      "reimbursement",
+      "rebate",
+      "dividend",
+      "bonus",
+      "income",
+      "received",
+      "deposit",
+      "payout",
+      "credit note"
+    ];
+
+    for (let i = 0; i < incomeKeywords.length; i++) {
+      if (category.includes(incomeKeywords[i])) return "IN";
+    }
+
+    return "OUT";
+  }
+
   let rowsInserted = 0;
 
   // Iterate through the rows
@@ -78,7 +114,13 @@ function processTransaction() {
     if (isTransferCategory && debtEntityRaw !== "" && debtEntityLower !== "me") {
       const outAccount = (data["account"] || "").toString().trim();
       const inAccount = debtEntityRaw;
-      const originalAmt = Math.abs(parseFloat(data["amount"] || 0));
+      const enteredAmt = parseFloat(data["amount"] || 0);
+      const originalAmt = Math.abs(enteredAmt);
+      const isReverseTransfer = enteredAmt >= 0;
+      const sourceAccount = isReverseTransfer ? inAccount : outAccount;
+      const targetAccount = isReverseTransfer ? outAccount : inAccount;
+      const sourceType = isReverseTransfer ? "OUT" : "OUT";
+      const targetType = isReverseTransfer ? "IN" : "IN";
       
       const isInternalTransfer = (categoryLower === "internal transfer" || categoryLower === "internal transfers");
       
@@ -87,7 +129,7 @@ function processTransaction() {
       let originalNotes = (data["notes"] || "").toString().trim();
       let transferNote = originalNotes;
       if (isInternalTransfer) {
-        const transferSuffix = "Transfer to " + inAccount;
+        const transferSuffix = "Transfer to " + targetAccount;
         transferNote = originalNotes ? (originalNotes + " | " + transferSuffix) : transferSuffix;
       }
 
@@ -95,8 +137,14 @@ function processTransaction() {
       if (colIndex["id"]) {
         sheet.getRange(actualRowNumber, colIndex["id"]).setValue(modifyId(originalId, "A"));
       }
+      if (colIndex["account"]) {
+        sheet.getRange(actualRowNumber, colIndex["account"]).setValue(sourceAccount);
+      }
       if (colIndex["amount"]) {
         sheet.getRange(actualRowNumber, colIndex["amount"]).setValue(-originalAmt);
+      }
+      if (colIndex["type"]) {
+        sheet.getRange(actualRowNumber, colIndex["type"]).setValue(sourceType);
       }
       if (debtEntityCol) {
         sheet.getRange(actualRowNumber, debtEntityCol).setValue(""); // BLANK
@@ -108,11 +156,11 @@ function processTransaction() {
       // Insert Row 2 (In leg) directly underneath
       let newRow = [...rowData];
       if (colIndex["id"]) newRow[colIndex["id"] - 1] = modifyId(originalId, "B");
-      if (colIndex["account"]) newRow[colIndex["account"] - 1] = inAccount;
+      if (colIndex["account"]) newRow[colIndex["account"] - 1] = targetAccount;
       if (colIndex["amount"]) newRow[colIndex["amount"] - 1] = originalAmt;
       if (debtEntityCol) newRow[debtEntityCol - 1] = ""; // BLANK
       if (colIndex["notes"]) newRow[colIndex["notes"] - 1] = transferNote;
-      if (colIndex["type"]) newRow[colIndex["type"] - 1] = "IN";
+      if (colIndex["type"]) newRow[colIndex["type"] - 1] = targetType;
 
       sheet.insertRowAfter(actualRowNumber);
       sheet.getRange(actualRowNumber + 1, 1, 1, newRow.length).setValues([newRow]);
@@ -120,7 +168,7 @@ function processTransaction() {
     }
 
     // --- MODULE 2: SPLIT BILL / LENDING ENGINE ---
-    else if (!isTransferCategory && debtEntityRaw.includes(",")) {
+    else if (!isTransferCategory && debtEntityRaw !== "" && debtEntityLower !== "me") {
       // Split the text by commas into an array
       const names = debtEntityRaw.split(",").map(p => p.trim()).filter(p => p.length > 0);
       const totalShares = names.length;
@@ -128,7 +176,8 @@ function processTransaction() {
       if (totalShares > 0) {
         const originalAmt = parseFloat(data["amount"] || 0);
         const splitAmt = Math.round((originalAmt / totalShares) * 100) / 100; 
-        const finalSplitAmt = splitAmt; // Keep original sign
+        const finalType = resolveType(data["type"], data["category"]);
+        const finalSplitAmt = finalType === "IN" ? Math.abs(splitAmt) : -Math.abs(splitAmt);
 
         const oldNotes = (data["notes"] || "").toString().trim();
         // Append Split audit info if multiple people
@@ -151,6 +200,9 @@ function processTransaction() {
             }
             if (colIndex["amount"]) {
               sheet.getRange(actualRowNumber, colIndex["amount"]).setValue(finalSplitAmt);
+            }
+            if (colIndex["type"]) {
+              sheet.getRange(actualRowNumber, colIndex["type"]).setValue(finalType);
             }
             if (debtEntityCol) {
               sheet.getRange(actualRowNumber, debtEntityCol).setValue(nameToWrite);
@@ -175,6 +227,7 @@ function processTransaction() {
             let friendRow = [...rowData]; 
             if (colIndex["id"]) friendRow[colIndex["id"] - 1] = modifyId(originalId, suffix);
             if (colIndex["amount"]) friendRow[colIndex["amount"] - 1] = finalSplitAmt;
+            if (colIndex["type"]) friendRow[colIndex["type"] - 1] = finalType;
             if (debtEntityCol) friendRow[debtEntityCol - 1] = nameToWrite;
             if (colIndex["notes"]) friendRow[colIndex["notes"] - 1] = finalNotes;
             if (colIndex["status"]) friendRow[colIndex["status"] - 1] = isMe ? "Settled" : "Pending";
@@ -196,11 +249,15 @@ function processTransaction() {
     // --- MODULE 3: STANDARD EXPENSE ENGINE (FALLBACK) ---
     else if (!isTransferCategory && (debtEntityRaw === "" || debtEntityLower === "me")) {
       const originalAmt = parseFloat(data["amount"] || 0);
-      const targetAmt = originalAmt; // Keep original sign
+      const finalType = resolveType(data["type"], data["category"]);
+      const targetAmt = resolveSignedAmount(data["type"], data["category"], originalAmt);
       
       const needsAmtChange = (originalAmt !== targetAmt);
       const needsDebtChange = (debtEntityRaw === "me" || debtEntityLower === "me");
       
+      if (colIndex["type"]) {
+        sheet.getRange(actualRowNumber, colIndex["type"]).setValue(finalType);
+      }
       if (needsAmtChange || needsDebtChange) {
         if (colIndex["amount"] && needsAmtChange) {
           sheet.getRange(actualRowNumber, colIndex["amount"]).setValue(targetAmt);
