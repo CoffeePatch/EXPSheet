@@ -9,6 +9,15 @@ function processTransaction() {
 
   if (lastRow < 2) return;
 
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    console.error('Could not obtain lock after 30 seconds.');
+    return;
+  }
+
+  try {
   // 1. Scan ALL rows to ensure we don't miss rows inserted by AppSheet above empty/formatted ghost rows
   const startRow = 2;
   const numRows = Math.max(1, lastRow - 1);
@@ -34,40 +43,19 @@ function processTransaction() {
     return originalId.toString().slice(0, -1) + replacement;
   }
 
-  function resolveSignedAmount(typeRaw, categoryRaw, rawAmount) {
-    const type = resolveType(typeRaw, categoryRaw);
-    const amount = Math.abs(parseFloat(rawAmount) || 0);
-    return type === "IN" ? amount : -amount;
-  }
-
-  function resolveType(typeRaw, categoryRaw) {
-    const type = (typeRaw || "").toString().trim().toUpperCase();
-    if (type === "IN" || type === "OUT") return type;
-
-    const category = (categoryRaw || "").toString().trim().toLowerCase();
-    if (!category) return "OUT";
-
-    const incomeKeywords = [
-      "salary",
-      "interest",
-      "cashback",
-      "refund",
-      "reimbursement",
-      "rebate",
-      "dividend",
-      "bonus",
-      "income",
-      "received",
-      "deposit",
-      "payout",
-      "credit note"
-    ];
-
-    for (let i = 0; i < incomeKeywords.length; i++) {
-      if (category.includes(incomeKeywords[i])) return "IN";
+  // Helper to resolve transaction type and amount without fragile keyword guessing
+  function resolveTransaction(typeRaw, rawAmount) {
+    const enteredType = (typeRaw || "").toString().trim().toUpperCase();
+    const enteredAmt = parseFloat(rawAmount) || 0;
+    
+    if (enteredType === "IN") {
+      return { finalType: "IN", finalAmt: Math.abs(enteredAmt) };
+    } else if (enteredType === "OUT") {
+      return { finalType: "OUT", finalAmt: -Math.abs(enteredAmt) };
+    } else {
+      // If Type is missing, trust the user's entered sign rather than overriding it
+      return { finalType: enteredAmt >= 0 ? "IN" : "OUT", finalAmt: enteredAmt };
     }
-
-    return "OUT";
   }
 
   let rowsInserted = 0;
@@ -76,7 +64,7 @@ function processTransaction() {
   for (let i = 0; i < rows.length; i++) {
     let rowData = rows[i];
     let actualRowNumber = startRow + i + rowsInserted;
-
+    try {
     // 3. Map row data safely
     let data = {};
     for (let j = 0; j < headers.length; j++) {
@@ -112,15 +100,12 @@ function processTransaction() {
 
     // --- MODULE 1: TRANSFER & INVESTMENT ENGINE ---
     if (isTransferCategory && debtEntityRaw !== "" && debtEntityLower !== "me") {
-      const outAccount = (data["account"] || "").toString().trim();
-      const inAccount = debtEntityRaw;
+      const sourceAccount = (data["account"] || "").toString().trim();
+      const targetAccount = debtEntityRaw;
       const enteredAmt = parseFloat(data["amount"] || 0);
       const originalAmt = Math.abs(enteredAmt);
-      const isReverseTransfer = enteredAmt >= 0;
-      const sourceAccount = isReverseTransfer ? inAccount : outAccount;
-      const targetAccount = isReverseTransfer ? outAccount : inAccount;
-      const sourceType = isReverseTransfer ? "OUT" : "OUT";
-      const targetType = isReverseTransfer ? "IN" : "IN";
+      const sourceType = "OUT";
+      const targetType = "IN";
       
       const isInternalTransfer = (categoryLower === "internal transfer" || categoryLower === "internal transfers");
       
@@ -175,9 +160,16 @@ function processTransaction() {
       
       if (totalShares > 0) {
         const originalAmt = parseFloat(data["amount"] || 0);
-        const splitAmt = Math.round((originalAmt / totalShares) * 100) / 100; 
-        const finalType = resolveType(data["type"], data["category"]);
-        const finalSplitAmt = finalType === "IN" ? Math.abs(splitAmt) : -Math.abs(splitAmt);
+        const { finalType, finalAmt: resolvedAmt } = resolveTransaction(data["type"], originalAmt);
+        const splitAmt = Math.round((Math.abs(resolvedAmt) / totalShares) * 100) / 100; 
+        const finalSplitAmt = finalType === "IN" ? splitAmt : -splitAmt;
+
+        // Idempotency guard: explicitly skip if it's a 1-person debt that's already processed
+        const currentType = (data["type"] || "").toString().trim().toUpperCase();
+        const statusRaw = (data["status"] || "").toString().trim();
+        if (totalShares === 1 && originalAmt === finalSplitAmt && currentType === finalType && statusRaw !== "") {
+          continue;
+        }
 
         const oldNotes = (data["notes"] || "").toString().trim();
         // Append Split audit info if multiple people
@@ -249,16 +241,17 @@ function processTransaction() {
     // --- MODULE 3: STANDARD EXPENSE ENGINE (FALLBACK) ---
     else if (!isTransferCategory && (debtEntityRaw === "" || debtEntityLower === "me")) {
       const originalAmt = parseFloat(data["amount"] || 0);
-      const finalType = resolveType(data["type"], data["category"]);
-      const targetAmt = resolveSignedAmount(data["type"], data["category"], originalAmt);
+      const { finalType, finalAmt: targetAmt } = resolveTransaction(data["type"], originalAmt);
       
       const needsAmtChange = (originalAmt !== targetAmt);
       const needsDebtChange = (debtEntityRaw === "me" || debtEntityLower === "me");
+      const currentType = (data["type"] || "").toString().trim().toUpperCase();
+      const needsTypeChange = (currentType !== finalType);
       
-      if (colIndex["type"]) {
-        sheet.getRange(actualRowNumber, colIndex["type"]).setValue(finalType);
-      }
-      if (needsAmtChange || needsDebtChange) {
+      if (needsTypeChange || needsAmtChange || needsDebtChange) {
+        if (colIndex["type"] && needsTypeChange) {
+          sheet.getRange(actualRowNumber, colIndex["type"]).setValue(finalType);
+        }
         if (colIndex["amount"] && needsAmtChange) {
           sheet.getRange(actualRowNumber, colIndex["amount"]).setValue(targetAmt);
         }
@@ -268,5 +261,17 @@ function processTransaction() {
         // ID and Notes remain as original ID and Original Notes
       }
     }
+    } catch (err) {
+      console.error(`Error processing row ${actualRowNumber}: ${err.message}`);
+      if (colIndex["notes"]) {
+        const oldNotes = (rowData[colIndex["notes"] - 1] || "").toString().trim();
+        const errorNote = `[SCRIPT ERROR: ${err.message}]`;
+        const newNotes = oldNotes ? `${oldNotes} | ${errorNote}` : errorNote;
+        sheet.getRange(actualRowNumber, colIndex["notes"]).setValue(newNotes);
+      }
+    }
+  }
+  } finally {
+    lock.releaseLock();
   }
 }
