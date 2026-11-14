@@ -1,0 +1,6 @@
+# Clasp deployment configuration (contains local script ID)
+.clasp.json
+
+# Operating System and Logs
+*.log
+.DS_Store

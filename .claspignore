@@ -1,0 +1,7 @@
+# Ignore all files by default
+**/**
+
+# Allow manifest and Google Apps Script files
+!appsscript.json
+!scripts/**/*.gs
+!scripts/**/*.js
