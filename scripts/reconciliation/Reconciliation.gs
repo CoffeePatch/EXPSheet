@@ -32,6 +32,9 @@ const RECON_CONFIG = Object.freeze({
   // Dry-Run Mode: When true, runs calculation and logs result model without modifying any output sheets
   DRY_RUN: false,
 
+  // Controlled Amount Tolerance: allowable difference for 1:1 match on same date & direction
+  AMOUNT_TOLERANCE: 1.00,
+
   // Bank column header candidates (searched case-insensitively with normalized spaces)
   BANK_DATE_HEADERS: ["Date", "Txn Date", "Value Date", "Transaction Date", "Posting Date"],
   BANK_DESC_HEADERS: ["Details", "Description", "Particulars", "Narrative", "Narration", "Remarks"],
@@ -49,7 +52,8 @@ const RECON_CONFIG = Object.freeze({
   LEDGER_CATEGORY_HEADERS: ["Category"],
 
   // Bank exclusion rules (internal sweeps, autosweeps, etc.)
-  BANK_EXCLUSION_KEYWORDS: ["SWEEP FROM", "AUTOSWEEP"]
+  BANK_EXCLUSION_PATTERNS: ["SWEEP"],
+  BANK_EXCLUSION_KEYWORDS: ["SWEEP"]
 });
 
 function reconcileBankStatement() {
@@ -94,6 +98,7 @@ function reconcileBankStatement() {
   const rangeBounds = reconResolveDateRange_(bankValues, bankMeta, listValues, ledgerMeta, tz, RECON_CONFIG);
 
   // Layer 3 & 4: Parse & Classify Source Data
+  const bankExclusionPatterns = RECON_CONFIG.BANK_EXCLUSION_PATTERNS || RECON_CONFIG.BANK_EXCLUSION_KEYWORDS || ["SWEEP"];
   const bankParsed = reconParseBankData_(
     bankValues,
     bankMeta,
@@ -101,7 +106,7 @@ function reconcileBankStatement() {
     RECON_CONFIG.RECON_DATE_ORDER,
     rangeBounds.rangeStartKey,
     rangeBounds.rangeEndKey,
-    RECON_CONFIG.BANK_EXCLUSION_KEYWORDS
+    bankExclusionPatterns
   );
 
   const ledgerParsed = reconParseLedgerData_(
@@ -119,7 +124,8 @@ function reconcileBankStatement() {
     targetAccount: RECON_CONFIG.RECON_TARGET_ACCOUNT,
     startKey: rangeBounds.rangeStartKey,
     endKey: rangeBounds.rangeEndKey,
-    dateFormat: RECON_CONFIG.RECON_LOG_DATE_FORMAT
+    dateFormat: RECON_CONFIG.RECON_LOG_DATE_FORMAT,
+    amountTolerance: typeof RECON_CONFIG.AMOUNT_TOLERANCE === "number" ? RECON_CONFIG.AMOUNT_TOLERANCE : 1.00
   };
 
   const result = reconExecuteReconciliation_(bankParsed, ledgerParsed, engineConfig);
@@ -357,13 +363,43 @@ function reconFindFirstManualDateKey_(values, meta, tz, dateOrder, targetAccount
  *  ============================================================================ */
 
 /**
+ * Checks whether a bank transaction description matches any exclusion pattern.
+ * Standalone keyword/pattern "SWEEP" (case-insensitive, whitespace/newline normalized, substring/token aware).
+ *
+ * @param {string} desc Bank transaction description
+ * @param {Array<string>} patterns Array of exclusion keywords/patterns (e.g. ["SWEEP"])
+ * @return {boolean} True if description matches an exclusion pattern
+ */
+function reconIsExcludedBankDesc_(desc, patterns) {
+  if (!desc) return false;
+  const rawPatterns = (patterns && patterns.length) ? patterns : ["SWEEP"];
+  // Normalize whitespace, tabs, and newlines to single space
+  const normalizedDesc = String(desc).replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
+  if (!normalizedDesc) return false;
+
+  for (let i = 0; i < rawPatterns.length; i++) {
+    const rawPat = rawPatterns[i];
+    const pat = String(rawPat || "").replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
+    if (!pat) continue;
+
+    // Check standalone word / token boundary (e.g. \bSWEEP\b) or substring match
+    const escaped = pat.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const tokenRegex = new RegExp(`(^|[^a-zA-Z0-9_])${escaped}([^a-zA-Z0-9_]|$)`, "i");
+    if (tokenRegex.test(normalizedDesc) || normalizedDesc.includes(pat)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Parses and classifies raw bank statement rows into in-scope, excluded, and unresolved.
  */
 function reconParseBankData_(values, meta, tz, dateOrder, startKey, endKey, exclusionKeywords) {
   const inScope = [];
   const excluded = [];
   const unresolved = [];
-  const keywords = (exclusionKeywords || []).map((k) => String(k || "").toUpperCase());
+  const patterns = exclusionKeywords || (typeof RECON_CONFIG !== "undefined" ? (RECON_CONFIG.BANK_EXCLUSION_PATTERNS || RECON_CONFIG.BANK_EXCLUSION_KEYWORDS) : ["SWEEP"]);
 
   for (let r = meta.startRow; r < values.length; r++) {
     const row = values[r] || [];
@@ -382,8 +418,8 @@ function reconParseBankData_(values, meta, tz, dateOrder, startKey, endKey, excl
       continue;
     }
 
-    // Exclusion check (e.g. SWEEP FROM)
-    const isExcluded = keywords.some((kw) => desc.toUpperCase().includes(kw));
+    // Exclusion check (e.g. SWEEP)
+    const isExcluded = reconIsExcludedBankDesc_(desc, patterns);
     if (isExcluded) {
       excluded.push({
         bankId: `BANK_${sheetRow}`,
@@ -579,6 +615,12 @@ function reconExecuteReconciliation_(bankParsed, ledgerParsed, config) {
   const excludedBank = bankParsed.excluded || [];
   const unresolvedAll = (bankParsed.unresolved || []).concat(ledgerParsed.unresolved || []);
 
+  const tolerance = (config && typeof config.amountTolerance === "number")
+    ? config.amountTolerance
+    : (typeof RECON_CONFIG !== "undefined" && typeof RECON_CONFIG.AMOUNT_TOLERANCE === "number"
+        ? RECON_CONFIG.AMOUNT_TOLERANCE
+        : 1.00);
+
   const consumedRowNumbers = new Set();
   const matches = [];
   const splitMatches = [];
@@ -589,24 +631,38 @@ function reconExecuteReconciliation_(bankParsed, ledgerParsed, config) {
   for (let i = 0; i < inScopeBank.length; i++) {
     const b = inScopeBank[i];
 
-    // Step 5A: Exact 1:1 Match Search
+    // Step 5A: 1:1 Match Search with Controlled Amount Tolerance
     const candidates = inScopeLedger.filter(
       (l) =>
         !consumedRowNumbers.has(l.rowNumber) &&
         l.dateKey === b.dateKey &&
         l.direction === b.direction &&
-        l.amount === b.amount
+        reconRoundCurrency_(Math.abs(b.amount - l.amount)) <= reconRoundCurrency_(tolerance)
     );
 
     if (candidates.length >= 1) {
-      // Consume first candidate deterministically (lowest row number)
+      // Sort candidates: exact match first (diff = 0), then smallest diff, then lowest row number
+      candidates.sort((c1, c2) => {
+        const diff1 = reconRoundCurrency_(Math.abs(b.amount - c1.amount));
+        const diff2 = reconRoundCurrency_(Math.abs(b.amount - c2.amount));
+        if (diff1 !== diff2) return diff1 - diff2;
+        return c1.rowNumber - c2.rowNumber;
+      });
+
       const cand = candidates[0];
       cand.consumed = true;
       consumedRowNumbers.add(cand.rowNumber);
 
+      const diff = reconRoundCurrency_(Math.abs(b.amount - cand.amount));
+      const reason = diff > 0
+        ? `Matched within amount tolerance (difference ${diff.toFixed(2)})`
+        : "Exact 1:1 match";
+
       const m = Object.assign({}, b, {
         status: "MATCH",
-        matchedLedgerRows: [cand]
+        matchedLedgerRows: [cand],
+        difference: diff,
+        reason: reason
       });
       matches.push(m);
       continue;
@@ -757,11 +813,30 @@ function reconExecuteReconciliation_(bankParsed, ledgerParsed, config) {
       .concat(reviews.filter((b) => b.dateKey === dk))
       .concat(unresolvedAll.filter((u) => u.dateKey === dk));
 
+    // Calculate tolerance variances on this date from accepted 1:1 matches
+    let tolInDiff = 0;
+    let tolOutDiff = 0;
+    const dayMatches = matches.filter((m) => m.dateKey === dk);
+    for (let mIdx = 0; mIdx < dayMatches.length; mIdx++) {
+      const dm = dayMatches[mIdx];
+      const matchedRow = dm.matchedLedgerRows && dm.matchedLedgerRows[0];
+      if (matchedRow) {
+        const diff = reconRoundCurrency_(matchedRow.amount - dm.amount);
+        if (dm.direction === "IN") tolInDiff = reconRoundCurrency_(tolInDiff + diff);
+        else if (dm.direction === "OUT") tolOutDiff = reconRoundCurrency_(tolOutDiff + diff);
+      }
+    }
+
+    const unexplainedInflowDiff = reconRoundCurrency_(inflowDiff - tolInDiff);
+    const unexplainedOutflowDiff = reconRoundCurrency_(outflowDiff - tolOutDiff);
+
     let status, reason;
-    if (inflowDiff === 0 && outflowDiff === 0) {
+    if (unexplainedInflowDiff === 0 && unexplainedOutflowDiff === 0) {
       if (dayExceptions.length === 0) {
         status = "OK";
-        reason = "Daily totals match and zero transaction exceptions";
+        reason = (tolInDiff !== 0 || tolOutDiff !== 0)
+          ? "Daily totals match within tolerance and zero transaction exceptions"
+          : "Daily totals match and zero transaction exceptions";
       } else {
         status = "WARNING";
         reason = `Daily totals balance, but ${dayExceptions.length} transaction exception(s) exist on this date`;
@@ -1101,7 +1176,117 @@ function reconBuildMissingActionRows_(missingItems, config) {
 var reconBuildCopyReadyLedgerRows_ = reconBuildMissingActionRows_;
 
 /**
+ * Builds unified, flat, filterable/sortable exception rows for Reconciliation_Log.
+ * Exactly 11 columns in order:
+ * ID | Date | Account | Title | Amount | P | D | C | Notes | Source | Category of Problem
+ *
+ * @param {Object} result Reconciliation result model
+ * @param {Object} [config] Configuration object (targetAccount, dateFormat, idGenerator)
+ * @return {Array<Array>} Array of 11-element rows with attached named properties
+ */
+function reconBuildUnifiedExceptionRows_(result, config) {
+  if (!result) return [];
+
+  const targetAccount = String(
+    (config && (config.targetAccount || config.RECON_TARGET_ACCOUNT)) ||
+    (typeof RECON_CONFIG !== "undefined" && (RECON_CONFIG.targetAccount || RECON_CONFIG.RECON_TARGET_ACCOUNT)) ||
+    "9682"
+  ).trim();
+
+  const dateFormat = (config && (config.dateFormat || config.DATE_FORMAT || config.RECON_LOG_DATE_FORMAT)) ||
+    (typeof RECON_CONFIG !== "undefined" && (RECON_CONFIG.dateFormat || RECON_CONFIG.DATE_FORMAT || RECON_CONFIG.RECON_LOG_DATE_FORMAT)) ||
+    "dd/MM/yyyy";
+
+  const customGenerator = config && config.idGenerator;
+  const generatedIds = new Set();
+  const rows = [];
+
+  const addRow = (id, dateStr, account, title, signedAmt, notes, source, category, origItem) => {
+    const row = [id, dateStr, account, title, signedAmt, "", "", "", notes, source, category];
+    row.id = id;
+    row.date = dateStr;
+    row.account = account;
+    row.title = title;
+    row.amount = signedAmt;
+    row.p = "";
+    row.d = "";
+    row.c = "";
+    row.notes = notes;
+    row.source = source;
+    row.categoryOfProblem = category;
+    row.category = category;
+    row.originalItem = origItem;
+    rows.push(row);
+  };
+
+  // 1. Bank Missing (Missing in Ledger)
+  (result.missing || []).forEach((item) => {
+    const id = reconGenerateHexId_(generatedIds, customGenerator);
+    const dateStr = item.dateKey ? reconFormatDateKeyToDisplay_(item.dateKey, dateFormat) : String(item.rawDate || "").trim();
+    const title = String(item.description || item.title || "").trim();
+    const amt = reconRoundCurrency_(item.amount);
+    const signedAmt = amt === 0 ? 0 : (item.direction === "OUT" ? -Math.abs(amt) : Math.abs(amt));
+    const notes = item.reason || "No matching ledger transaction found";
+    addRow(id, dateStr, targetAccount, title, signedAmt, notes, "Bank", "Missing in Ledger", item);
+  });
+
+  // 2. Reviews (Split review / investigation)
+  (result.reviews || []).forEach((item) => {
+    const id = reconGenerateHexId_(generatedIds, customGenerator);
+    const dateStr = item.dateKey ? reconFormatDateKeyToDisplay_(item.dateKey, dateFormat) : String(item.rawDate || "").trim();
+    const title = String(item.description || item.title || "").trim();
+    let signedAmt = "";
+    if (typeof item.amount === "number" && !isNaN(item.amount)) {
+      const a = reconRoundCurrency_(item.amount);
+      signedAmt = a === 0 ? 0 : (item.direction === "OUT" ? -Math.abs(a) : Math.abs(a));
+    }
+    const notes = item.reason || "Split review required";
+    addRow(id, dateStr, targetAccount, title, signedAmt, notes, item.source || "Bank", "Review", item);
+  });
+
+  // 3. Unresolved Data Errors
+  (result.unresolved || []).forEach((item) => {
+    const isLedger = item.source === "Ledger";
+    const id = isLedger ? (String(item.id || "").trim()) : reconGenerateHexId_(generatedIds, customGenerator);
+    const dateStr = item.dateKey ? reconFormatDateKeyToDisplay_(item.dateKey, dateFormat) : String(item.rawDate || "").trim();
+    const title = String(item.title || item.description || "").trim();
+    let signedAmt = "";
+    if (typeof item.amount === "number" && !isNaN(item.amount)) {
+      const a = reconRoundCurrency_(item.amount);
+      signedAmt = a === 0 ? 0 : (item.direction === "OUT" ? -Math.abs(a) : Math.abs(a));
+    } else if (item.rawDebit) {
+      const d = reconParseAmount_(item.rawDebit);
+      if (isFinite(d) && d !== 0) signedAmt = -Math.abs(reconRoundCurrency_(d));
+    } else if (item.rawCredit) {
+      const c = reconParseAmount_(item.rawCredit);
+      if (isFinite(c) && c !== 0) signedAmt = Math.abs(reconRoundCurrency_(c));
+    } else if (item.rawAmount) {
+      const r = reconParseAmount_(item.rawAmount);
+      if (isFinite(r)) signedAmt = reconRoundCurrency_(r);
+    }
+    const notes = item.reason || "Unresolved transaction data";
+    addRow(id, dateStr, item.account || targetAccount, title, signedAmt, notes, item.source || (isLedger ? "Ledger" : "Bank"), "Unresolved Data", item);
+  });
+
+  // 4. Ledger Extras (Missing in Bank)
+  (result.ledgerExtras || []).forEach((item) => {
+    // Preserve EXISTING ledger ID (not row number)
+    const id = String(item.id || "").trim();
+    const dateStr = item.dateKey ? reconFormatDateKeyToDisplay_(item.dateKey, dateFormat) : String(item.rawDate || "").trim();
+    const title = String(item.title || item.description || "").trim();
+    const amt = reconRoundCurrency_(item.amount);
+    const signedAmt = amt === 0 ? 0 : (item.direction === "OUT" ? -Math.abs(amt) : Math.abs(amt));
+    const notes = item.notes || item.reason || "Unconsumed ledger row on target account";
+    addRow(id, dateStr, item.account || targetAccount, title, signedAmt, notes, "Ledger", "Missing in Bank", item);
+  });
+
+  return rows;
+}
+
+/**
  * Writes the primary exception-oriented reconciliation log.
+ * Replaces multiple tables with ONE unified 11-column filterable table:
+ * ID | Date | Account | Title | Amount | P | D | C | Notes | Source | Category of Problem
  */
 function reconWriteExceptionsLog_(ss, result, sheetName, dateFormat) {
   let sheet = ss.getSheetByName(sheetName);
@@ -1111,29 +1296,29 @@ function reconWriteExceptionsLog_(ss, result, sheetName, dateFormat) {
   sheet.clear();
 
   const stats = result.stats;
-  const cfg = result.configuration;
+  const cfg = result.configuration || {};
 
   // Header Dashboard Cards (Rows 1-4)
   const kpiData = [
-    ["BANK RECONCILIATION REPORT", "", "", "", "", "", "", "", ""],
+    ["BANK RECONCILIATION REPORT", "", "", "", "", "", "", "", "", "", ""],
     [
-      `Target Account: ${cfg.targetAccount}`,
+      `Target Account: ${cfg.targetAccount || ""}`,
       `Date Range: ${cfg.startKey || "Start"} to ${cfg.endKey || "End"}`,
       `Executed: ${new Date().toISOString().replace("T", " ").slice(0, 19)}`,
-      "", "", "", "", "", ""
+      "", "", "", "", "", "", "", ""
     ],
     [
-      `Bank In-Scope: ${stats.inScopeBankTxns}`,
-      `1:1 Matched: ${stats.matchedCount}`,
-      `Split Matched: ${stats.splitMatchedCount}`,
-      `MISSING: ${stats.missingCount}`,
-      `REVIEW: ${stats.reviewCount}`,
-      `UNRESOLVED: ${stats.unresolvedCount}`,
-      `EXCLUDED (Audit): ${stats.excludedCount}`,
-      `LEDGER EXTRA (Info): ${stats.ledgerExtraCount}`,
-      ""
+      `Bank In-Scope: ${stats.inScopeBankTxns || 0}`,
+      `1:1 Matched: ${stats.matchedCount || 0}`,
+      `Split Matched: ${stats.splitMatchedCount || 0}`,
+      `MISSING: ${stats.missingCount || 0}`,
+      `REVIEW: ${stats.reviewCount || 0}`,
+      `UNRESOLVED: ${stats.unresolvedCount || 0}`,
+      `EXCLUDED (Audit): ${stats.excludedCount || 0}`,
+      `LEDGER EXTRA (Info): ${stats.ledgerExtraCount || 0}`,
+      "", "", ""
     ],
-    ["", "", "", "", "", "", "", "", ""]
+    ["", "", "", "", "", "", "", "", "", "", ""]
   ];
 
   sheet.getRange(1, 1, kpiData.length, kpiData[0].length).setValues(kpiData);
@@ -1141,120 +1326,42 @@ function reconWriteExceptionsLog_(ss, result, sheetName, dateFormat) {
   sheet.getRange("A2:C2").setFontColor("#555555");
   sheet.getRange("A3:H3").setFontWeight("bold");
 
-  // Action Required Table (Row 6) - Exactly 5 columns: ID | Date | Account | Title | Amount
-  sheet.getRange(5, 1).setValue("ACTION REQUIRED").setFontWeight("bold").setFontSize(11);
-  const actionHeaders = ["ID", "Date", "Account", "Title", "Amount"];
-  const actionRows = reconBuildMissingActionRows_(result.missing, cfg);
+  // Flat Unified Table (Starts at Row 5)
+  // Exactly 11 columns in this order:
+  // ID | Date | Account | Title | Amount | P | D | C | Notes | Source | Category of Problem
+  const headers = ["ID", "Date", "Account", "Title", "Amount", "P", "D", "C", "Notes", "Source", "Category of Problem"];
+  const unifiedRows = reconBuildUnifiedExceptionRows_(result, Object.assign({}, cfg, { dateFormat: dateFormat }));
 
-  const tableRows = [actionHeaders];
-  if (actionRows.length > 0) {
-    actionRows.forEach((r) => {
-      tableRows.push([r.id, r.date, r.account, r.title, r.amount]);
+  const tableRows = [headers];
+  if (unifiedRows.length > 0) {
+    unifiedRows.forEach((r) => {
+      tableRows.push([r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10]]);
     });
   } else {
     tableRows.push([
       "-",
       "-",
       "-",
-      "Zero missing bank transactions requiring ledger entry",
-      "-"
+      "Zero exceptions found",
+      "-",
+      "", "", "", "", "", ""
     ]);
   }
 
-  const startRow = 6;
-  sheet.getRange(startRow, 1, tableRows.length, actionHeaders.length).setValues(tableRows);
+  const startRow = 5;
+  sheet.getRange(startRow, 1, tableRows.length, headers.length).setValues(tableRows);
 
   // Format headers
-  sheet.getRange(startRow, 1, 1, actionHeaders.length)
+  sheet.getRange(startRow, 1, 1, headers.length)
     .setFontWeight("bold")
     .setBackground("#f3f3f3");
 
-  // Format Amount column (Column 5) as signed numeric currency, NEVER parentheses: #,##0.00;-#,##0.00;0.00
-  if (actionRows.length > 0) {
-    sheet.getRange(startRow + 1, 5, actionRows.length, 1).setNumberFormat("#,##0.00;-#,##0.00;0.00");
-  }
-
-  // Informational & Diagnostics Section (placed below Action Required table)
-  const infoStartRow = startRow + tableRows.length + 2;
-  const infoHeaders = [
-    "Date",
-    "Category / Status",
-    "Source",
-    "Amount",
-    "Title / Description",
-    "Row #",
-    "Notes / Audit Reason"
-  ];
-  const infoRows = [infoHeaders];
-
-  // Reviews (e.g. incomplete/broken splits)
-  result.reviews.forEach((rev) => {
-    const dVal = rev.dateKey ? reconDateKeyToDate_(rev.dateKey) : (rev.rawDate || "");
-    const amt = rev.amount ? (rev.direction === "OUT" ? -rev.amount : rev.amount) : "";
-    infoRows.push([
-      dVal,
-      "REVIEW (Investigate)",
-      rev.source || "Bank",
-      amt,
-      rev.description || rev.title || "",
-      rev.rowNumber || "",
-      rev.reason || ""
-    ]);
-  });
-
-  // Unresolved (e.g. bad date or bad amount)
-  result.unresolved.forEach((un) => {
-    const dVal = un.dateKey ? reconDateKeyToDate_(un.dateKey) : (un.rawDate || "");
-    const amt = un.amount ? (un.direction === "OUT" ? -un.amount : un.amount) : (un.rawDebit ? -un.rawDebit : (un.rawCredit || un.rawAmount || ""));
-    infoRows.push([
-      dVal,
-      "UNRESOLVED (Data Error)",
-      un.source || "Bank",
-      amt,
-      un.description || un.title || "",
-      un.rowNumber || "",
-      un.reason || ""
-    ]);
-  });
-
-  // Excluded sweeps
-  result.excluded.forEach((ex) => {
-    const dVal = ex.dateKey ? reconDateKeyToDate_(ex.dateKey) : (ex.rawDate || "");
-    const amt = ex.rawCredit ? ex.rawCredit : (ex.rawDebit ? -ex.rawDebit : "");
-    infoRows.push([
-      dVal,
-      "EXCLUDED (Audit)",
-      "Bank",
-      amt,
-      ex.description || "",
-      ex.rowNumber || "",
-      ex.reason || ""
-    ]);
-  });
-
-  // Ledger Extras
-  result.ledgerExtras.forEach((le) => {
-    const dVal = le.dateKey ? reconDateKeyToDate_(le.dateKey) : (le.rawDate || "");
-    const amt = le.direction === "OUT" ? -le.amount : le.amount;
-    infoRows.push([
-      dVal,
-      "LEDGER EXTRA (Info)",
-      "Ledger",
-      amt,
-      le.title || le.id || "",
-      le.rowNumber || "",
-      le.notes || le.reason || ""
-    ]);
-  });
-
-  if (infoRows.length > 1) {
-    sheet.getRange(infoStartRow - 1, 1).setValue("INFORMATIONAL & AUDIT ITEMS").setFontWeight("bold").setFontSize(11);
-    sheet.getRange(infoStartRow, 1, infoRows.length, infoRows[0].length).setValues(infoRows);
-    sheet.getRange(infoStartRow, 1, 1, infoHeaders.length).setFontWeight("bold").setBackground("#fafafa");
+  // Format Date (Column 2) and Amount (Column 5) as signed numeric currency, NEVER parentheses: #,##0.00;-#,##0.00;0.00
+  if (unifiedRows.length > 0) {
     if (dateFormat) {
-      sheet.getRange(infoStartRow + 1, 1, infoRows.length - 1, 1).setNumberFormat(dateFormat);
-      sheet.getRange(infoStartRow + 1, 4, infoRows.length - 1, 1).setNumberFormat("#,##0.00;-#,##0.00;0.00");
+      sheet.getRange(startRow + 1, 2, unifiedRows.length, 1).setNumberFormat(dateFormat);
     }
+    sheet.getRange(startRow + 1, 5, unifiedRows.length, 1).setNumberFormat("#,##0.00;-#,##0.00;0.00");
   }
 }
 
